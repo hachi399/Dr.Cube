@@ -1,23 +1,43 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>My Simple Site</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Webカメラテスト</title>
   <style>
     body {
-      background: #f4f4f4;
-      font-family: sans-serif;
+      background: #111;
+      color: white;
       text-align: center;
-      padding: 80px;
+      font-family: sans-serif;
+      margin: 0;
+      padding: 20px;
     }
-    h1 {
-      color: #333;
+    video, canvas {
+      width: 90%;
+      max-width: 600px;
+      border-radius: 12px;
+      margin-top: 20px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.5);
+    }
+    button {
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 1rem;
+      cursor: pointer;
+      border: none;
+      border-radius: 8px;
+      background: #28a745;
+      color: white;
     }
   </style>
 </head>
 <body>
-  <h1>こんにちは！Renderで公開したサイトです🌐</h1>
-  <p>GitHubとRenderで超シンプルにデプロイしました。</p>
+  <h1>🎥 Webカメラプレビュー</h1>
+  <video id="camera" autoplay playsinline></video><br />
+  <button id="captureBtn">📸 写真を撮る</button>
+  <canvas id="snapshot"></canvas>
+
+  <script src="script.js"></script>
 </body>
 </html>
