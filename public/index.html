@@ -1,40 +1,43 @@
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>Camera Analyzer</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Webカメラテスト</title>
+  <style>
+    body {
+      background: #111;
+      color: white;
+      text-align: center;
+      font-family: sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+    video, canvas {
+      width: 90%;
+      max-width: 600px;
+      border-radius: 12px;
+      margin-top: 20px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.5);
+    }
+    button {
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 1rem;
+      cursor: pointer;
+      border: none;
+      border-radius: 8px;
+      background: #28a745;
+      color: white;
+    }
+  </style>
 </head>
 <body>
-  <h2>📸 カメラで撮影してGPT-4oに送信</h2>
-  <video id="video" autoplay playsinline></video>
-  <button id="capture">撮影＆分析</button>
-  <p id="result"></p>
+  <h1>🎥 Webカメラプレビュー</h1>
+  <video id="camera" autoplay playsinline></video><br />
+  <button id="captureBtn">📸 写真を撮る</button>
+  <canvas id="snapshot"></canvas>
 
-  <script>
-    const video = document.getElementById("video");
-    const result = document.getElementById("result");
-
-    navigator.mediaDevices.getUserMedia({ video: true })
-      .then(stream => video.srcObject = stream)
-      .catch(err => alert("カメラを起動できませんでした: " + err));
-
-    document.getElementById("capture").onclick = async () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      canvas.getContext("2d").drawImage(video, 0, 0);
-      const imageBase64 = canvas.toDataURL("image/jpeg").split(",")[1];
-
-      result.textContent = "分析中...";
-      const res = await fetch("/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64 })
-      });
-
-      const data = await res.json();
-      result.textContent = data.output_text || JSON.stringify(data);
-    };
-  </script>
+  <script src="script.js"></script>
 </body>
 </html>
