@@ -21,7 +21,7 @@
       box-shadow: 0 0 15px rgba(0,0,0,0.5);
     }
     button {
-      margin-top: 20px;
+      margin: 10px;
       padding: 10px 20px;
       font-size: 1rem;
       cursor: pointer;
@@ -30,12 +30,19 @@
       background: #28a745;
       color: white;
     }
+    #stopBtn {
+      background: #dc3545;
+    }
   </style>
 </head>
 <body>
   <h1>🎥 Webカメラプレビュー</h1>
   <video id="camera" autoplay playsinline></video><br />
-  <button id="captureBtn">📸 写真を撮る</button>
+  <div>
+    <button id="startBtn">▶ カメラON</button>
+    <button id="stopBtn">⏹ カメラOFF</button>
+    <button id="captureBtn">📸 写真を撮る</button>
+  </div>
   <canvas id="snapshot"></canvas>
 
   <script src="script.js"></script>
