@@ -1,31 +1,27 @@
-const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-const ws = new WebSocket(`${protocol}//${window.location.host}`);
+const video = document.getElementById('camera');
+const canvas = document.getElementById('snapshot');
+const button = document.getElementById('captureBtn');
 
-const chatBox = document.getElementById('chat-box');
-const input = document.getElementById('chat-input');
-const button = document.getElementById('send-btn');
-
-ws.onmessage = async (event) => {
-  let text;
-
-  if (typeof event.data === 'string') {
-    text = event.data;
-  } else if (event.data instanceof Blob) {
-    text = await event.data.text();
-  } else {
-    text = JSON.stringify(event.data);
+// カメラ起動
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user" }, // インカメラを指定
+      audio: false
+    });
+    video.srcObject = stream;
+  } catch (err) {
+    alert("カメラを許可してください: " + err);
   }
+}
 
-  const div = document.createElement('div');
-  div.textContent = text;
-  chatBox.appendChild(div);
-  chatBox.scrollTop = chatBox.scrollHeight;
-};
-
+// 写真撮影
 button.addEventListener('click', () => {
-  const message = input.value.trim();
-  if (message !== '') {
-    ws.send(message);
-    input.value = '';
-  }
+  const ctx = canvas.getContext('2d');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  ctx.drawImage(video, 0, 0);
+  console.log("写真を撮りました。");
 });
+
+startCamera();
