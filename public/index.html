@@ -27,10 +27,11 @@
       cursor: pointer;
       border: none;
       border-radius: 8px;
-      background: #28a745;
+      background: #007bff;
       color: white;
+      transition: background 0.3s;
     }
-    #stopBtn {
+    button.off {
       background: #dc3545;
     }
   </style>
@@ -39,11 +40,11 @@
   <h1>🎥 Webカメラプレビュー</h1>
   <video id="camera" autoplay playsinline></video><br />
   <div>
-    <button id="startBtn">▶ カメラON</button>
-    <button id="stopBtn">⏹ カメラOFF</button>
+    <button id="toggleBtn">▶ カメラON</button>
     <button id="captureBtn">📸 写真を撮る</button>
   </div>
   <canvas id="snapshot"></canvas>
+
   <script src="script.js"></script>
 </body>
 </html>
