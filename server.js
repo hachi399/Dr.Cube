@@ -1,48 +1,33 @@
-import express from "express";
-import fetch from "node-fetch";
+const express = require('express');
+const http = require('http');
+const WebSocket = require('ws');
+const path = require('path');
 
 const app = express();
-app.use(express.json({ limit: "10mb" }));
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
 
-// OpenAI経由で画像を分析
-app.post("/analyze", async (req, res) => {
-  try {
-    const { imageBase64 } = req.body;
+// 静的ファイル配信
+app.use(express.static(path.join(__dirname, 'public')));
 
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        input: [
-          {
-            role: "user",
-            content: [
-              { type: "input_text", text: "この画像を説明してください。" },
-              { type: "input_image", image_url: `data:image/jpeg;base64,${imageBase64}` }
-            ]
-          }
-        ]
-      })
+wss.on('connection', (ws) => {
+  console.log('新しいクライアントが接続しました');
+  ws.send('接続成功！チャットを始めましょう。');
+
+  ws.on('message', (message) => {
+    const text = message.toString();
+    console.log('受信:', text);
+
+    // すべてのクライアントに送信
+    wss.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(text);
+      }
     });
-
-    const result = await response.json();
-    res.json(result);
-  } catch (error) {
-    console.error("Error:", error);
-    res.status(500).send("Error analyzing image");
-  }
+  });
 });
 
-// ルートアクセス確認用
-app.get("/", (req, res) => {
-  res.send("✅ Renderサーバー稼働中");
-});
-
-// Renderポート対応
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-
+server.listen(PORT, () => {
+  console.log(`サーバー起動中: http://localhost:${PORT}`);
+});
