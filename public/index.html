@@ -1,16 +1,40 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html>
 <head>
   <meta charset="UTF-8">
-  <title>WebSocket チャット</title>
-  <link rel="stylesheet" href="style.css">
+  <title>Camera Analyzer</title>
 </head>
 <body>
-  <div class="chat-container">
-    <div id="chat-box"></div>
-    <input id="chat-input" placeholder="メッセージを入力" />
-    <button id="send-btn">送信</button>
-  </div>
-  <script src="script.js"></script>
+  <h2>📸 カメラで撮影してGPT-4oに送信</h2>
+  <video id="video" autoplay playsinline></video>
+  <button id="capture">撮影＆分析</button>
+  <p id="result"></p>
+
+  <script>
+    const video = document.getElementById("video");
+    const result = document.getElementById("result");
+
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => video.srcObject = stream)
+      .catch(err => alert("カメラを起動できませんでした: " + err));
+
+    document.getElementById("capture").onclick = async () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext("2d").drawImage(video, 0, 0);
+      const imageBase64 = canvas.toDataURL("image/jpeg").split(",")[1];
+
+      result.textContent = "分析中...";
+      const res = await fetch("/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64 })
+      });
+
+      const data = await res.json();
+      result.textContent = data.output_text || JSON.stringify(data);
+    };
+  </script>
 </body>
 </html>
