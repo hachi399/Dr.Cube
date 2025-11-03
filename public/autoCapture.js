@@ -8,7 +8,7 @@ function calcSharpness(data, width, height) {
       Math.abs(data[i] - data[i + 4]) + // 横方向の差分
       Math.abs(data[i] - data[i + 4 * width]); // 縦方向の差分
     diffSum += diff;
-    console.log(diff);
+  
   }
   return diffSum / (width * height);
 }
@@ -38,6 +38,7 @@ async function detectFocusAndCapture(video, canvas) {
 
     // ピントが合ったら自動撮影＆ダウンロード
     if (sharpness > 40) {
+      console.log("📸 ピントが合いました！自動撮影中...");
       captureAndDownload(canvas);
     }
   }, 1000); // 1秒ごとに判定
