@@ -44,7 +44,7 @@ async function detectFocusAndCapture(video, canvas) {
   // パラメータ（必要に応じて調整）
   const CHECK_INTERVAL_MS = 1000; // 判定間隔
   const MAX_ANALYSIS_WIDTH = 320; // 解析用に縮小して安定化＆高速化
-  const SHARPNESS_THRESHOLD = 10; // 閾値（環境により調整）
+  const SHARPNESS_THRESHOLD = 3.8; // 閾値（環境により調整）
   const COOLDOWN_MS = 5000; // 連続撮影を防ぐクールダウン
 
   // 分析用オフスクリーンキャンバス
