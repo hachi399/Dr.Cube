@@ -5,6 +5,7 @@ const captureBtn = document.getElementById('captureBtn');
 
 let stream = null;
 let cameraOn = false;
+let autoCaptureInterval = null;
 
 // カメラ起動
 async function startCamera() {
@@ -18,6 +19,18 @@ async function startCamera() {
     toggleBtn.textContent = "⏹ カメラOFF";
     toggleBtn.classList.add("off");
     console.log("✅ カメラ起動");
+    // 自動撮影（autoCapture.jsの関数）を開始
+    try {
+      const photoCanvas = document.getElementById('photoCanvas');
+      if (photoCanvas && typeof detectFocusAndCapture === 'function') {
+        // detectFocusAndCaptureはintervalIdを返す
+        if (!autoCaptureInterval) {
+          autoCaptureInterval = detectFocusAndCapture(video, photoCanvas);
+        }
+      }
+    } catch (e) {
+      console.warn('自動撮影の開始に失敗しました:', e);
+    }
   } catch (err) {
     alert("カメラを許可してください: " + err);
   }
@@ -33,6 +46,15 @@ function stopCamera() {
     toggleBtn.textContent = "▶ カメラON";
     toggleBtn.classList.remove("off");
     console.log("🛑 カメラ停止");
+    // 自動撮影のintervalをクリア
+    try {
+      if (autoCaptureInterval) {
+        clearInterval(autoCaptureInterval);
+        autoCaptureInterval = null;
+      }
+    } catch (e) {
+      console.warn('自動撮影の停止に失敗しました:', e);
+    }
   }
 }
 
