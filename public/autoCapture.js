@@ -8,6 +8,7 @@ function calcSharpness(data, width, height) {
       Math.abs(data[i] - data[i + 4]) + // 横方向の差分
       Math.abs(data[i] - data[i + 4 * width]); // 縦方向の差分
     diffSum += diff;
+    console.log(diff);
   }
   return diffSum / (width * height);
 }
