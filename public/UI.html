@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>My ChatGPT</title>
+  <style>
+    body { font-family: sans-serif; margin: 2em; }
+    #chat { border: 1px solid #ccc; padding: 1em; height: 300px; overflow-y: auto; }
+    #input { width: 80%; }
+    button { padding: 0.5em; }
+  </style>
+</head>
+<body>
+  <h1>ChatGPT Clone</h1>
+  <div id="chat"></div>
+  <input id="input" placeholder="メッセージを入力..." />
+  <button onclick="sendMessage()">送信</button>
+
+  <script>
+    const API_URL = "https://chatgpt-backend.onrender.com/chat"; // RenderのURLに置き換え
+
+    async function sendMessage() {
+      const input = document.getElementById("input");
+      const chat = document.getElementById("chat");
+      const userMessage = input.value;
+      if (!userMessage) return;
+
+      chat.innerHTML += `<p><b>あなた:</b> ${userMessage}</p>`;
+      input.value = "";
+
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userMessage }),
+      });
+      const data = await res.json();
+
+      chat.innerHTML += `<p><b>AI:</b> ${data.reply}</p>`;
+      chat.scrollTop = chat.scrollHeight;
+    }
+  </script>
+</body>
+</html>
