@@ -16,7 +16,7 @@ app.add_middleware(
 )
 
 # === OpenAIクライアント初期化 ===
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(api_key=os.getenv("CHATGPT_API_KEY"))
 
 @app.get("/")
 def root():
