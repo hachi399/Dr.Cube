@@ -33,7 +33,7 @@ async def chat(request: Request):
         if image_b64:
             # ===== 画像解析リクエスト =====
             completion = client.chat.completions.create(
-                model="gpt-4o-mini",  # 画像対応モデル
+                model="gpt-4o-mini",
                 messages=[
                     {
                         "role": "system",
@@ -49,8 +49,12 @@ async def chat(request: Request):
                 ]
             )
 
-            # ✅ 最新仕様では message.content は配列形式
-            ai_reply = completion.choices[0].message.content[0].text
+            # contentが文字列か配列かを判定して安全に取得
+            content = completion.choices[0].message.content
+            if isinstance(content, list):
+                ai_reply = "".join([c.get("text", "") for c in content if "text" in c])
+            else:
+                ai_reply = content
 
         else:
             # ===== 通常テキストチャット =====
