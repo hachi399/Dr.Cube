@@ -2,23 +2,29 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>My ChatGPT</title>
+  <title>Auto Capture AI Chat</title>
   <style>
     body { font-family: sans-serif; margin: 2em; }
     #chat { border: 1px solid #ccc; padding: 1em; height: 300px; overflow-y: auto; }
     #input { width: 80%; }
     button { padding: 0.5em; }
+    video { width: 320px; border: 1px solid #ccc; margin-top: 1em; }
   </style>
 </head>
 <body>
-  <h1>ChatGPT Clone</h1>
+  <h1>自動撮影＋AI解析チャット</h1>
   <div id="chat"></div>
   <input id="input" placeholder="メッセージを入力..." />
   <button onclick="sendMessage()">送信</button>
 
-  <script>
-    const API_URL = "https://dr-cube-1.onrender.com/chat"; // RenderのURLに置き換え
+  <h3>カメラ映像</h3>
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas" style="display:none;"></canvas>
 
+  <script>
+    const API_URL = "https://dr-cube-1.onrender.com/chat"; // Render のURLに置き換え
+
+    // ====== ChatGPTとの通常会話 ======
     async function sendMessage() {
       const input = document.getElementById("input");
       const chat = document.getElementById("chat");
@@ -38,6 +44,118 @@
       chat.innerHTML += `<p><b>AI:</b> ${data.reply}</p>`;
       chat.scrollTop = chat.scrollHeight;
     }
+
+    // ====== 自動撮影関連 ======
+
+    // シャープネス（ピント合い具合）計算
+    function calcSharpness(data, width, height) {
+      let diffSum = 0;
+      for (let y = 0; y < height - 1; y++) {
+        for (let x = 0; x < width - 1; x++) {
+          const i = (y * width + x) * 4;
+          const r = data[i], g = data[i + 1], b = data[i + 2];
+          const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+          const ir = (y * width + (x + 1)) * 4;
+          const rr = data[ir], gr = data[ir + 1], br = data[ir + 2];
+          const lumR = 0.2126 * rr + 0.7152 * gr + 0.0722 * br;
+
+          const id = ((y + 1) * width + x) * 4;
+          const rd = data[id], gd = data[id + 1], bd = data[id + 2];
+          const lumD = 0.2126 * rd + 0.7152 * gd + 0.0722 * bd;
+
+          diffSum += Math.abs(lum - lumR) + Math.abs(lum - lumD);
+        }
+      }
+      const count = (width - 1) * (height - 1) * 2;
+      return count > 0 ? diffSum / count : 0;
+    }
+
+    // ピント検出と自動撮影
+    async function detectFocusAndCapture(video, canvas) {
+      const ctx = canvas.getContext("2d");
+
+      const CHECK_INTERVAL_MS = 1000;
+      const MAX_ANALYSIS_WIDTH = 320;
+      const SHARPNESS_THRESHOLD = 3.8;
+      const COOLDOWN_MS = 5000;
+
+      const analysisCanvas = document.createElement('canvas');
+      const analysisCtx = analysisCanvas.getContext('2d');
+
+      let lastCaptureTime = 0;
+
+      setInterval(async () => {
+        if (!video.srcObject) return;
+        if (video.videoWidth === 0 || video.videoHeight === 0) return;
+
+        const scale = Math.min(1, MAX_ANALYSIS_WIDTH / video.videoWidth);
+        const aw = Math.floor(video.videoWidth * scale);
+        const ah = Math.floor(video.videoHeight * scale);
+        analysisCanvas.width = aw;
+        analysisCanvas.height = ah;
+        analysisCtx.drawImage(video, 0, 0, aw, ah);
+
+        const imageData = analysisCtx.getImageData(0, 0, aw, ah);
+        const sharpness = calcSharpness(imageData.data, aw, ah);
+        console.debug('sharpness=', sharpness);
+
+        // ピントが合ったときだけ送信
+        if (sharpness > SHARPNESS_THRESHOLD) {
+          const now = Date.now();
+          if (now - lastCaptureTime > COOLDOWN_MS) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            const base64Image = canvas.toDataURL("image/png");
+            console.log('📸 ピント検出、AIに送信します...');
+            await analyzeImage(base64Image);
+
+            lastCaptureTime = now;
+          }
+        }
+      }, CHECK_INTERVAL_MS);
+    }
+
+    // ====== AI解析送信 ======
+    async function analyzeImage(base64Image) {
+      const chat = document.getElementById("chat");
+      chat.innerHTML += `<p><b>📷 AI解析中...</b></p>`;
+      chat.scrollTop = chat.scrollHeight;
+
+      try {
+        const res = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            image: base64Image,
+            message: "この画像を解析してください。"
+          }),
+        });
+        const data = await res.json();
+        chat.innerHTML += `<p><b>AI解析結果:</b> ${data.reply}</p>`;
+      } catch (err) {
+        console.error(err);
+        chat.innerHTML += `<p style="color:red;">解析エラー: ${err.message}</p>`;
+      }
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    // ====== カメラ起動 ======
+    async function startCamera() {
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        detectFocusAndCapture(video, canvas);
+      } catch (err) {
+        alert("カメラへのアクセスが拒否されました: " + err.message);
+      }
+    }
+
+    startCamera();
   </script>
 </body>
 </html>
