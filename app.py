@@ -35,16 +35,21 @@ async def chat(request: Request):
             completion = client.chat.completions.create(
                 model="gpt-4o-mini",  # 画像対応モデル
                 messages=[
-                    {"role": "system", "content": "あなたは画像を分析し、内容を丁寧に説明するAIアシスタントです。"},
+                    {
+                        "role": "system",
+                        "content": "あなたは画像を分析し、内容を丁寧に説明するAIアシスタントです。"
+                    },
                     {
                         "role": "user",
                         "content": [
                             {"type": "text", "text": user_message or "この画像を解析してください。"},
-                            {"type": "image_url", "image_url": image_b64}
+                            {"type": "image_url", "image_url": {"url": image_b64}}
                         ]
                     }
                 ]
             )
+
+            # ✅ 最新仕様では message.content は配列形式
             ai_reply = completion.choices[0].message.content[0].text
 
         else:
