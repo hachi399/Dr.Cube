@@ -55,7 +55,7 @@
       const ctx = canvas.getContext("2d");
       const CHECK_INTERVAL_MS = 1000;
       const MAX_ANALYSIS_WIDTH = 320;
-      const SHARPNESS_THRESHOLD = 3.8;
+      const SHARPNESS_THRESHOLD = 3.5;
       const COOLDOWN_MS = 5000;
       const analysisCanvas = document.createElement('canvas');
       const analysisCtx = analysisCanvas.getContext('2d');
