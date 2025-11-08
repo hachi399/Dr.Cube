@@ -1,0 +1,107 @@
+
+  /* ====== 全体デザイン ====== */
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: radial-gradient(circle at top left, #0f2027, #203a43, #2c5364);
+    font-family: "Segoe UI", "Hiragino Sans", sans-serif;
+    color: #fff;
+    overflow-y: auto; /* ✅ スクロール可能に */
+    
+  
+
+  }
+
+  main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;  /* ✅ 中央寄せ */
+    justify-content: flex-start;
+    min-height: 100vh;
+    padding: 2em 1em;
+  }
+
+  h1 {
+    text-align: center;
+    margin-bottom: 1em;
+  }
+
+  #chat {
+    width: 80%;
+    max-width: 600px;
+    height: 300px;
+    overflow-y: auto;
+    margin-bottom: 1em;
+    padding: 1em;
+    backdrop-filter: blur(20px) saturate(180%);
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+  }
+
+  #input {
+    width: 70%;
+    padding: 0.6em;
+    border-radius: 8px;
+    border: none;
+    font-size: 1em;
+    margin-right: 0.5em;
+  }
+
+  button {
+    padding: 0.6em 1em;
+    border: none;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #00c6ff, #0072ff);
+    color: #fff;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+
+  button:hover {
+    transform: scale(1.05);
+    background: linear-gradient(135deg, #0072ff, #00c6ff);
+  }
+
+  .chat-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 2em;
+  }
+
+  video {
+    width: 80%;
+    max-width: 600px;
+    margin-top: 1em;
+    border-radius: 12px;
+    backdrop-filter: blur(15px);
+    background-color: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    transition: all 0.3s ease;
+    display: block;
+  }
+
+  #toggleBtn.off {
+    background: #f66;
+  }
+
+  /* ====== カーソルアニメーション ====== */
+  .cursor {
+    position: fixed;
+    top: 0; left: 0;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,255,255,0.6), transparent 70%);
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    mix-blend-mode: lighten;
+    transition: transform 0.1s ease-out;
+    z-index: 9999;
+  }
+
