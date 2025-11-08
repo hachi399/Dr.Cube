@@ -7,6 +7,7 @@
     let stream = null;
     let cameraOn = false;
     let autoCaptureInterval = null;
+  
 
     // ====== ChatGPTとの通常会話 ======
     async function sendMessage() {
@@ -29,6 +30,12 @@
       chat.scrollTop = chat.scrollHeight;
     }
 
+document.getElementById("input").addEventListener("keydown", function(event) {
+  if (event.key === "Enter") {
+    
+    sendMessage();
+  }
+});
     // ====== シャープネス（ピント合い具合）計算 ======
     function calcSharpness(data, width, height) {
       let diffSum = 0;
