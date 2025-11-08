@@ -105,6 +105,7 @@ document.getElementById("input").addEventListener("keydown", function(event) {
     async function analyzeImage(base64Image) {
       const chat = document.getElementById("chat");
       chat.innerHTML += `<p><b>📷 AI解析中...</b></p>`;
+      stopCamera(); // 解析中はカメラ停止
       chat.scrollTop = chat.scrollHeight;
 
       try {
