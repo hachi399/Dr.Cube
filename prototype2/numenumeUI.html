@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Extreme NumeNume UI</title>
+
+  <!-- ✅ GSAP & ScrollTrigger（ぬるぬるアニメ用） -->
+  <script src="https://unpkg.com/gsap@3/dist/gsap.min.js"></script>
+  <script src="https://unpkg.com/gsap@3/dist/ScrollTrigger.min.js"></script>
+
+  <style>
+    /* --- ベース設定 --- */
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden;
+      height: 100%;
+      font-family: 'Segoe UI', sans-serif;
+      color: #fff;
+      background: radial-gradient(circle at 50% 30%, #0f2027, #203a43, #2c5364);
+    }
+
+    /* --- 背景ゆらぎ --- */
+    canvas#bg {
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: -1;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(120deg, #1a2a6c, #b21f1f, #fdbb2d);
+      filter: blur(40px) brightness(1.2);
+      opacity: 0.8;
+    }
+
+    /* --- コンテンツ --- */
+    .container {
+      min-height: 200vh;
+      padding: 10vh 10vw;
+    }
+
+    h1 {
+      font-size: 4rem;
+      margin-bottom: 2rem;
+      text-shadow: 0 0 20px rgba(255,255,255,0.4);
+    }
+
+    p {
+      max-width: 600px;
+      line-height: 1.8;
+      font-size: 1.2rem;
+    }
+
+    /* --- 弾むボタン --- */
+    .btn {
+      background: linear-gradient(135deg, #00c6ff, #0072ff);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      padding: 14px 28px;
+      font-size: 20px;
+      cursor: pointer;
+      transition: background 0.3s;
+      box-shadow: 0 4px 20px rgba(0, 114, 255, 0.4);
+      margin-top: 2rem;
+    }
+    .btn:hover {
+      background: linear-gradient(135deg, #00e6ff, #0082ff);
+    }
+
+    /* --- ヌメヌメカーソル --- */
+    .cursor {
+      width: 20px;
+      height: 20px;
+      background: rgba(0,255,255,0.5);
+      border-radius: 50%;
+      position: fixed;
+      pointer-events: none;
+      mix-blend-mode: difference;
+      transition: width 0.3s, height 0.3s;
+      z-index: 9999;
+    }
+
+    /* --- セクションアニメーション用 --- */
+    .section {
+      margin-top: 40vh;
+      opacity: 0;
+      transform: translateY(60px);
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="bg"></canvas>
+
+  <div class="cursor"></div>
+
+  <div class="container">
+    <h1>ぬめぬめUI体験</h1>
+    <p>
+      JavaScriptの力を最大限に使い、動きに「質感」と「生命感」を与えるインターフェース。
+      カーソルが追従し、背景が流動し、要素がふわっと現れる。
+    </p>
+
+    <button class="btn">Hover Me</button>
+
+    <div class="section">
+      <h2>Scrollで登場するセクション</h2>
+      <p>スクロールに合わせて自然に現れる、ぬるっとしたアニメーション。</p>
+    </div>
+  </div>
+
+  <script>
+  //------------------------- 弾むボタン --------------------------
+  const btn = document.querySelector('.btn');
+  btn.addEventListener('mouseenter', () => {
+    gsap.to(btn, { scale: 1.1, duration: 0.4, ease: "elastic.out(1, 0.3)" });
+  });
+  btn.addEventListener('mouseleave', () => {
+    gsap.to(btn, { scale: 1.0, duration: 0.3, ease: "power3.out" });
+  });
+
+  //------------------------- ヌメヌメカーソル --------------------------
+  let x = 0, y = 0, targetX = 0, targetY = 0;
+  const cursor = document.querySelector('.cursor');
+
+  window.addEventListener('mousemove', e => {
+    targetX = e.clientX;
+    targetY = e.clientY;
+  });
+
+  function animateCursor() {
+    x += (targetX - x) * 0.1;
+    y += (targetY - y) * 0.1;
+    cursor.style.transform = `translate(${x}px, ${y}px)`;
+    requestAnimationFrame(animateCursor);
+  }
+  animateCursor();
+
+  //------------------------- 背景の流体アニメーション --------------------------
+  const canvas = document.getElementById('bg');
+  const ctx = canvas.getContext('2d');
+  let w, h, t = 0;
+
+  function resize() {
+    w = canvas.width = window.innerWidth;
+    h = canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  function draw() {
+    t += 0.015;
+    ctx.clearRect(0, 0, w, h);
+    for (let i = 0; i < 60; i++) {
+      const x = w/2 + Math.sin(t + i) * 300 * Math.sin(t/2);
+      const y = h/2 + Math.cos(t*1.5 + i*0.5) * 200;
+      ctx.beginPath();
+      ctx.arc(x, y, 60, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${(t*80 + i*8) % 360}, 80%, 60%, 0.15)`;
+      ctx.fill();
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+
+  //------------------------- スクロールトリガー（ふわっと出現） --------------------------
+  gsap.utils.toArray('.section').forEach(section => {
+    gsap.to(section, {
+      opacity: 1,
+      y: 0,
+      duration: 1.2,
+      ease: "power3.out",
+      scrollTrigger: {
+        trigger: section,
+        start: "top 80%",
+      }
+    });
+  });
+  </script>
+</body>
+</html>
