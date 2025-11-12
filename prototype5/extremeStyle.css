@@ -1,0 +1,123 @@
+/* ===== 全体デザイン ===== */
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: radial-gradient(circle at top left, #0f2027, #203a43, #2c5364);
+  font-family: "Segoe UI", "Hiragino Sans", sans-serif;
+  color: #fff;
+  overflow-y: auto;
+}
+
+/* ===== メインエリア ===== */
+main {
+  margin-left: 70px; /* サイドバー折りたたみ時の余白 */
+  padding: 2em;
+  transition: margin-left 0.4s ease;
+}
+
+main.expanded {
+  margin-left: 300px; /* サイドバー展開時 */
+}
+
+#chat {
+  width: 80%;
+  max-width: 600px;
+  height: 300px;
+  overflow-y: auto;
+  margin-bottom: 1em;
+  padding: 1em;
+  backdrop-filter: blur(20px) saturate(180%);
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.chat-controls {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 2em;
+}
+
+#input {
+  width: 70%;
+  padding: 0.6em;
+  border-radius: 8px;
+  border: none;
+  margin-right: 0.5em;
+}
+
+button {
+  padding: 0.6em 1em;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #00c6ff, #0072ff);
+  color: #fff;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+button:hover {
+  transform: scale(1.05);
+}
+
+/* ===== カメラ映像 ===== */
+video {
+  width: 80%;
+  max-width: 600px;
+  margin-top: 1em;
+  border-radius: 12px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255,255,255,0.2);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+
+/* ===== サイドバー ===== */
+#sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 300px;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(20px);
+  border-right: 1px solid rgba(255,255,255,0.2);
+  transition: transform 0.4s ease;
+  z-index: 10;
+}
+
+#sidebar.collapsed {
+  transform: translateX(-240px);
+}
+
+#toggleSidebar {
+  position: absolute;
+  top: 10px;
+  right: -45px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 0 8px 8px 0;
+  border: none;
+  color: #fff;
+  padding: 10px;
+  cursor: pointer;
+}
+
+.sidebar-content {
+  padding: 20px;
+}
+
+#selected-text, #explanation {
+  background: rgba(255,255,255,0.15);
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  color: #fff;
+  white-space: pre-wrap;
+}
+
+#footer {
+  text-align: center;
+  font-size: 12px;
+  opacity: 0.7;
+}
