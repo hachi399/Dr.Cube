@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Dr.Cube AI解析 / Team.ぐんまちゃん</title>
+  <link rel="stylesheet" href="extremeStyle.css">
+</head>
+
+<body>
+  <!-- ===== サイドバー ===== -->
+  <div id="sidebar" class="collapsed">
+    <button id="toggleSidebar">☰</button>
+    <div class="sidebar-content">
+      <h2>選択されたテキスト</h2>
+      <div id="selected-text">（まだ選択されていません）</div>
+
+      <h2>AI解析結果</h2>
+      <div id="explanation">なぞった部分の解析結果がここに表示されます。</div>
+
+      <div id="footer">🧠 AI Text Analyzer v0.2</div>
+    </div>
+  </div>
+
+  <!-- ===== メインコンテンツ ===== -->
+  <main id="main">
+    <h1>Dr.Cube AI解析 / Team.ぐんまちゃん /</h1>
+
+    <!-- <div id="chat">
+      <p>お手伝いできることはありますか？</p>
+    </div>
+
+    <div class="chat-controls">
+      <input id="input" placeholder="メッセージを入力..." />
+      <button id="sendBtn">送信</button>
+    </div> -->
+
+    <h3>カメラ映像</h3>
+    <button id="toggleBtn">▶ カメラON</button>
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+<!-- 
+    <section id="content">
+      <h2>AI解析ドキュメント</h2>
+      <p>
+        このシステムでは、ページ内のどこでもテキストをなぞることで、<br>
+        その意味や背景をAIがリアルタイムに解説します。
+      </p>
+      <p>
+        例えば「ニューラルネットワーク」「量子AI」「ディープラーニング」などを選択してみてください。
+      </p>
+    </section> -->
+  </main>
+
+  <script src="keep_server.js"></script>
+  <script src="camera.js"></script>
+  <script>
+    // // ===== サイドバーの開閉 =====
+    // const sidebar = document.getElementById("sidebar");
+    // const toggleSidebar = document.getElementById("toggleSidebar");
+    // toggleSidebar.addEventListener("click", () => {
+    //   sidebar.classList.toggle("collapsed");
+    //   document.getElementById("main").classList.toggle("expanded");
+    // });
+
+    // // ===== 選択テキストとAI解析 =====
+    // const selectedBox = document.getElementById("selected-text");
+    // const explanationBox = document.getElementById("explanation");
+
+    // document.addEventListener("mouseup", async () => {
+    //   const selectedText = window.getSelection().toString().trim();
+    //   if (selectedText.length > 0) {
+    //     selectedBox.textContent = selectedText;
+    //     explanationBox.textContent = "解析中... 🔍";
+
+    //     try {
+    //       const response = await fetch("https://dr-cube-1.onrender.com/chat", {
+    //         method: "POST",
+    //         headers: { "Content-Type": "application/json" },
+    //         body: JSON.stringify({ message: selectedText })
+    //       });
+    //       const data = await response.json();
+    //       explanationBox.textContent = data.reply || "解析結果を取得できませんでした。";
+    //     } catch (err) {
+    //       explanationBox.textContent = "⚠ エラーが発生しました。サーバーを確認してください。";
+    //       console.error(err);
+    //     }
+    //   }
+    // });
+
+//     // ===== チャット送信 =====
+//     document.getElementById("sendBtn").addEventListener("click", sendMessage);
+//   </script>
+</body>
+</html>
