@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>派生図ジェネレーター (Dynamic Derivation Tree)</title>
+  <style>
+    :root{--bg:#0f172a;--panel:#0b1220;--accent:#60a5fa;--muted:#94a3b8;--card:#071029}
+    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,'Hiragino Kaku Gothic ProN',Meiryo,Arial}
+    body{background:linear-gradient(180deg,#071024 0%, #07122b 60%);color:#e6eef8}
+    .app{display:flex;height:100vh;gap:12px;padding:12px;box-sizing:border-box}
+    /* パネルを少し明るくして視認性向上 */
+    .panel{width:320px;background:linear-gradient(180deg, rgba(10,14,24,0.9), rgba(6,10,18,0.85));border-radius:12px;padding:14px;box-shadow:0 6px 24px rgba(2,6,23,0.6);overflow:auto}
+    .canvas{flex:1;background:linear-gradient(180deg,rgba(8,12,20,0.6),rgba(4,8,16,0.4));border-radius:12px;padding:10px}
+    h1{font-size:18px;margin:0 0 10px 0}
+    label{display:block;font-size:13px;color:var(--muted);margin-top:8px}
+    /* フォーム要素は明るい背景＋濃い文字にして可読性を確保 */
+    input[type=text],textarea,select{
+      width:100%;
+      padding:8px;
+      margin-top:6px;
+      border-radius:8px;
+      border:1px solid rgba(3,16,40,0.12);
+      background:#f8fafc;
+      color:#031028;
+      font-size:13px;
+      box-sizing:border-box;
+    }
+    input::placeholder, textarea::placeholder { color: #6b7280; }
+    button{margin-top:8px;padding:8px 10px;border-radius:8px;border:0;background:var(--accent);color:#031028;cursor:pointer}
+    .muted{color:var(--muted);font-size:13px;margin-top:6px}
+    .controls{display:flex;gap:8px;flex-wrap:wrap}
+    .small{padding:6px 8px;font-size:13px;border-radius:8px}
+    svg{width:100%;height:calc(100vh - 60px);background:transparent}
+    /* ノードを読みやすく：白背景＋濃い文字（太字） */
+    .node rect{fill:#ffffff;stroke:#2b3140;stroke-width:1.4;rx:8;ry:8}
+    .node text{fill:#031028;font-size:13px;pointer-events:none;font-weight:600;font-family:inherit}
+    .link{fill:none;stroke:rgba(96,165,250,0.95);stroke-width:2.2}
+    .selected rect{stroke:gold;stroke-width:2}
+    .hint{font-size:12px;color:var(--muted);margin-top:10px}
+    .file{display:flex;gap:6px;align-items:center}
+    .error{color:#ffb4b4;background:#2b0f0f;padding:8px;border-radius:8px;margin-top:10px}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="panel">
+      <h1>派生図ジェネレーター</h1>
+      <div class="muted">ノードをクリックして選択・編集できます。右のキャンバス上でドラッグして位置調整（自動レイアウトあり）。</div>
+
+      <label>選択中ノード</label>
+      <input id="nodeLabel" type="text" placeholder="ラベルを入力" />
+
+      <div class="controls">
+        <button id="addChild" class="small">子ノード追加</button>
+        <button id="deleteNode" class="small">ノード削除</button>
+        <button id="collapseToggle" class="small">折りたたむ/展開</button>
+      </div>
+
+      <label>レイアウト</label>
+      <select id="layoutMode">
+        <option value="tree">ツリー (垂直)</option>
+        <option value="radial">ラジアル (円形)</option>
+      </select>
+      <div class="controls">
+        <button id="applyLayout" class="small">再配置</button>
+        <button id="fit" class="small">全体表示</button>
+      </div>
+
+      <label>保存 / 読込</label>
+      <div class="file">
+        <button id="exportJson" class="small">JSONをダウンロード</button>
+        <input id="importFile" type="file" accept="application/json" />
+      </div>
+
+      <label>簡易JSON編集</label>
+      <textarea id="jsonText" rows="6" placeholder='ここにJSONを書いて「読み込む」を押します'></textarea>
+      <div class="controls">
+        <button id="loadJson" class="small">読み込む</button>
+        <button id="reset" class="small">初期データに戻す</button>
+      </div>
+
+      <div id="errorBox" class="error" style="display:none"></div>
+      <div class="hint">使い方: ノードをクリック → 右のテキストを編集 → 「子ノード追加」など。ダブルクリックで直接ラベル編集。</div>
+    </div>
+
+    <div class="canvas">
+      <svg id="svg"></svg>
+    </div>
+  </div>
+
+  <!-- D3.js: 動的に読み込み、ロードに失敗したらユーザーに通知する -->
+  <script>
+    // CDNの順に読み込む (複数候補)
+    const D3_CDNS = [
+      'https://d3js.org/d3.v7.min.js',
+      'https://unpkg.com/d3@7/dist/d3.min.js'
+    ];
+
+    function loadScript(url){
+      return new Promise((resolve,reject)=>{
+        const s = document.createElement('script');
+        s.src = url;
+        s.onload = () => resolve(url);
+        s.onerror = () => reject(new Error('failed to load ' + url));
+        document.head.appendChild(s);
+      });
+    }
+
+    async function ensureD3(){
+      if(window.d3) return;
+      let lastErr = null;
+      for(const url of D3_CDNS){
+        try{
+          await loadScript(url);
+          if(window.d3) return;
+        }catch(err){ lastErr = err; console.warn(err); }
+      }
+      throw lastErr || new Error('d3 failed to load');
+    }
+
+    // 初期化処理はここに集約
+    async function init(){
+      try{
+        await ensureD3();
+      }catch(err){
+        const box = document.getElementById('errorBox');
+        box.style.display = 'block';
+        box.textContent = 'エラー: D3.js を読み込めませんでした。オフライン環境か、外部スクリプトがブロックされています。ネットワーク設定を確認するか、d3をローカルで提供してください。';
+        console.error('d3 load failed', err);
+        // 最低限JSON編集などは使えるように初期化のみ行う
+        initBasicControls();
+        return;
+      }
+
+      // d3が利用可能になったので本体を初期化
+      initWithD3();
+    }
+
+    // 初期データ
+    let data = {
+      name: 'ルート',
+      children: [
+        {name: '分岐A', children: [{name:'A1'},{name:'A2'}]},
+        {name: '分岐B'}
+      ]
+    };
+
+    // Basic controls that don't require d3 (JSON import/export, input hooks)
+    function initBasicControls(){
+      document.getElementById('exportJson').addEventListener('click', ()=>{
+        const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = 'derivation-tree.json'; a.click(); URL.revokeObjectURL(url);
+      });
+
+      document.getElementById('importFile').addEventListener('change', (e)=>{
+        const f = e.target.files[0]; if(!f) return;
+        const reader = new FileReader(); reader.onload = ()=>{ try{ const parsed = JSON.parse(reader.result); data = parsed; document.getElementById('jsonText').value = JSON.stringify(data,null,2); }catch(err){ alert('JSONの解析に失敗しました'); } };
+        reader.readAsText(f);
+      });
+
+      document.getElementById('loadJson').addEventListener('click', ()=>{
+        try{ const parsed = JSON.parse(document.getElementById('jsonText').value); data = parsed; } catch(e){ alert('無効なJSONです'); }
+      });
+
+      document.getElementById('reset').addEventListener('click', ()=>{ if(confirm('初期データに戻しますか？')){ data = {name:'ルート', children:[{name:'分岐A'},{name:'分岐B'}]}; document.getElementById('jsonText').value = JSON.stringify(data,null,2); } });
+
+      document.getElementById('jsonText').value = JSON.stringify(data,null,2);
+    }
+
+    function initWithD3(){
+      // 状態
+      let selected = null;
+      const width = 1600, height = 900;
+      const svg = d3.select('#svg').attr('viewBox', [0,0,width,height]);
+      const gLink = svg.append('g');
+      const gNode = svg.append('g');
+
+      const tree = d3.tree().size([height - 80, width - 260]);
+      const radialTree = d3.tree().size([2*Math.PI, Math.min(width,height)/2 - 80]).separation((a,b)=> (a.parent==b.parent?1:2)/a.depth);
+
+      function update(rootData, mode='tree'){
+        const root = d3.hierarchy(rootData);
+        if(mode==='radial') radialTree(root);
+        else tree(root);
+
+        // links
+        const links = root.links();
+        const linkSel = gLink.selectAll('path.link').data(links, d=>d.target.data._id || (d.target.data._id = Math.random().toString(36).slice(2)));
+        linkSel.exit().remove();
+        linkSel.enter().append('path').attr('class','link').merge(linkSel)
+          .attr('d', d=> linkPath(d, mode));
+
+        // nodes
+        const nodes = root.descendants();
+        const nodeSel = gNode.selectAll('g.node').data(nodes, d=>d.data._id || (d.data._id = Math.random().toString(36).slice(2)));
+        nodeSel.exit().remove();
+
+        const nodeEnter = nodeSel.enter().append('g').attr('class','node')
+          .on('click', (event,d)=>{ event.stopPropagation(); selectNode(d.data); })
+          .on('dblclick', (event,d)=>{ event.stopPropagation(); editLabelInline(d.data); })
+          .call(d3.drag()
+            .on('start', dragstarted)
+            .on('drag', dragged)
+            .on('end', dragended)
+          );
+
+        nodeEnter.append('rect').attr('width', 120).attr('height',28).attr('x',-60).attr('y',-14);
+        nodeEnter.append('text').attr('dy', '0.35em').attr('text-anchor','middle').text(d=>d.data.name);
+
+        const nodeMerge = nodeEnter.merge(nodeSel);
+        nodeMerge.classed('selected', d=> selected && d.data===selected );
+
+        nodeMerge.attr('transform', d=> nodeTransform(d, mode));
+        nodeMerge.select('text').text(d=>d.data.name);
+
+        // center root placeholder
+        if(!selected) centerNode(root);
+      }
+
+      function nodeTransform(d, mode){
+        if(mode==='radial'){
+          const r = d.y; const a = d.x - Math.PI/2;
+          return `translate(${width/2 + r*Math.cos(a)},${height/2 + r*Math.sin(a)})`;
+        } else {
+          return `translate(${d.y + 120},${d.x + 40})`;
+        }
+      }
+
+      function linkPath(d, mode){
+        if(mode==='radial'){
+          const sx = width/2 + d.source.y*Math.cos(d.source.x - Math.PI/2);
+          const sy = height/2 + d.source.y*Math.sin(d.source.x - Math.PI/2);
+          const tx = width/2 + d.target.y*Math.cos(d.target.x - Math.PI/2);
+          const ty = height/2 + d.target.y*Math.sin(d.target.x - Math.PI/2);
+          return `M${sx},${sy}C${(sx+tx)/2},${(sy+ty)/2} ${(sx+tx)/2},${(sy+ty)/2} ${tx},${ty}`;
+        } else {
+          return `M${d.source.y + 120},${d.source.x + 40}C${d.source.y + 160},${d.source.x + 40} ${d.target.y + 80},${d.target.x + 40} ${d.target.y + 120},${d.target.x + 40}`;
+        }
+      }
+
+      function selectNode(nodeData){
+        selected = nodeData;
+        document.getElementById('nodeLabel').value = selected.name || '';
+        update(data, document.getElementById('layoutMode').value);
+      }
+
+      function editLabelInline(nodeData){
+        const newLabel = prompt('ノード名を入力', nodeData.name);
+        if(newLabel!=null){ nodeData.name = newLabel; document.getElementById('nodeLabel').value=newLabel; update(data, document.getElementById('layoutMode').value); }
+      }
+
+      // Drag handlers - only adjust absolute transform for manual repositioning (visual only)
+      function dragstarted(event,d){ d3.select(this).raise().classed('dragging', true); }
+      function dragged(event,d){ d.x = event.y - 40; d.y = event.x - 120; d3.select(this).attr('transform', `translate(${d.y + 120},${d.x + 40})`); }
+      function dragended(event,d){ d3.select(this).classed('dragging', false); }
+
+      function centerNode(root){ /* noop - placeholder in case we want auto centering */ }
+
+      // Controls that use d3
+      document.getElementById('addChild').addEventListener('click', ()=>{
+        if(!selected){ alert('まずノードを選んでください'); return; }
+        selected.children = selected.children || [];
+        const newNode = {name: '新しいノード'};
+        selected.children.push(newNode);
+        update(data, document.getElementById('layoutMode').value);
+      });
+
+      document.getElementById('deleteNode').addEventListener('click', ()=>{
+        if(!selected){ alert('まずノードを選んでください'); return; }
+        if(selected === data){ alert('ルートは削除できません'); return; }
+        // find and remove from parent
+        function removeNode(parent){
+          if(!parent.children) return false;
+          const idx = parent.children.indexOf(selected);
+          if(idx>=0){ parent.children.splice(idx,1); return true; }
+          for(const c of parent.children) if(removeNode(c)) return true;
+          return false;
+        }
+        removeNode(data);
+        selected = null;
+        update(data, document.getElementById('layoutMode').value);
+      });
+
+      document.getElementById('collapseToggle').addEventListener('click', ()=>{
+        if(!selected){ alert('まずノードを選んでください'); return; }
+        if(selected._collapsed){ selected._collapsed = false; if(selected._backup) { selected.children = selected._backup; delete selected._backup; } }
+        else { selected._collapsed = true; if(selected.children){ selected._backup = selected.children; selected.children = null; } }
+        update(data, document.getElementById('layoutMode').value);
+      });
+
+      document.getElementById('applyLayout').addEventListener('click', ()=> update(data, document.getElementById('layoutMode').value));
+      document.getElementById('fit').addEventListener('click', ()=>{
+        // fit: adjust viewBox to bounding box
+        const nodes = gNode.selectAll('g.node').nodes();
+        if(nodes.length===0) return;
+        let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
+        nodes.forEach(n=>{
+          const bbox = n.getBBox(); const m = n.transform.baseVal.consolidate()?.matrix || {e:0,f:0};
+          minX = Math.min(minX, bbox.x + m.e); minY = Math.min(minY, bbox.y + m.f);
+          maxX = Math.max(maxX, bbox.x + bbox.width + m.e); maxY = Math.max(maxY, bbox.y + bbox.height + m.f);
+        });
+        const pad=40; svg.attr('viewBox', [minX-pad,minY-pad, maxX-minX+pad*2, maxY-minY+pad*2]);
+      });
+
+      // Live edit text field
+      document.getElementById('nodeLabel').addEventListener('input', (e)=>{
+        if(selected){ selected.name = e.target.value; update(data, document.getElementById('layoutMode').value); }
+      });
+
+      // Export / Import (using same handlers as basic, but update UI too)
+      document.getElementById('exportJson').addEventListener('click', ()=>{
+        const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = 'derivation-tree.json'; a.click(); URL.revokeObjectURL(url);
+      });
+
+      document.getElementById('importFile').addEventListener('change', (e)=>{
+        const f = e.target.files[0]; if(!f) return;
+        const reader = new FileReader(); reader.onload = ()=>{ try{ const parsed = JSON.parse(reader.result); data = parsed; document.getElementById('jsonText').value = JSON.stringify(data,null,2); selected=null; update(data, document.getElementById('layoutMode').value); }catch(err){ alert('JSONの解析に失敗しました'); } };
+        reader.readAsText(f);
+      });
+
+      document.getElementById('loadJson').addEventListener('click', ()=>{
+        try{ const parsed = JSON.parse(document.getElementById('jsonText').value); data = parsed; selected=null; update(data, document.getElementById('layoutMode').value); } catch(e){ alert('無効なJSONです'); }
+      });
+
+      document.getElementById('reset').addEventListener('click', ()=>{ if(confirm('初期データに戻しますか？')){ data = {name:'ルート', children:[{name:'分岐A'},{name:'分岐B'}]}; selected=null; document.getElementById('jsonText').value = JSON.stringify(data,null,2); update(data, document.getElementById('layoutMode').value); } });
+
+      // click outside to deselect
+      svg.on('click', ()=>{ selected=null; document.getElementById('nodeLabel').value=''; update(data, document.getElementById('layoutMode').value); });
+
+      // initialize
+      document.getElementById('jsonText').value = JSON.stringify(data,null,2);
+      update(data, 'tree');
+    }
+
+    // 起動
+    init();
+  </script>
+</body>
+</html>
