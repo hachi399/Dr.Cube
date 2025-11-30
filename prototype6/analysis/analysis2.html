@@ -1,186 +1,77 @@
 <!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Extended Camera App</title>
+  <meta charset="utf-8">
+  <title>Analysis Page</title>
   <style>
-    body { font-family: sans-serif; display:flex; gap:20px; padding:20px; }
-    video, canvas { width:100%; border-radius:12px; background:#000; }
-    button { padding:10px 14px; border-radius:10px; border:0; cursor:pointer; }
-    .gallery { width:320px; max-height:80vh; overflow:auto; border-left:1px solid #ddd; padding-left:10px; }
-    .thumb { width:100%; margin-bottom:10px; border-radius:8px; cursor:pointer; }
-    .selected { outline:4px solid #007bff; }
+    body { font-family: sans-serif; padding: 20px; }
+    img { max-width: 100%; border-radius: 12px; }
   </style>
 </head>
 <body>
-  <div style="flex:1;max-width:640px;">
-    <h2>カメラ</h2>
-    <video id="video" autoplay playsinline></video>
-    <canvas id="canvas" style="display:none"></canvas>
+  <h2>解析ページ</h2>
+  <p>カメラページから送られた画像を表示しています。</p>
 
-    <div style="margin-top:10px;display:flex;gap:10px;">
-      <button id="cameraToggle">🔌 カメラ停止</button>
-      <button id="captureBtn">📸 シャッター</button>
-      <button id="saveLocalBtn">💾 保存</button>
-    </div>
-  </div>
-
-  <div class="gallery">
-    <h3>ギャラリー</h3>
-    <div id="thumbs"></div>
-    <button id="sendBtn" style="margin-top:10px;width:100%;">➡️ 選択画像を送信</button>
-  </div>
+  <div id="preview">画像を読み込み中…</div>
 
 <script>
-/* === カメラ制御 === */
-let stream = null;
-const video = document.getElementById('video');
+// ============================================
+//  URL の ?id= を取得
+// ============================================
+const params = new URL(location.href).searchParams;
+const imageId = Number(params.get("id"));
 
-async function startCamera() {
-  if (stream) return;
-  stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:false });
-  video.srcObject = stream;
-}
-function stopCamera() {
-  if (!stream) return;
-  stream.getTracks().forEach(t => t.stop());
-  stream = null;
-  video.srcObject = null;
-}
-startCamera();
-
-/* ON / OFF トグル */
-document.getElementById("cameraToggle").onclick = () => {
-  if (stream) {
-    stopCamera();
-    cameraToggle.textContent = "🔌 カメラ開始";
-  } else {
-    startCamera();
-    cameraToggle.textContent = "🔌 カメラ停止";
-  }
-};
-
-/* === キャプチャ === */
-const canvas = document.getElementById('canvas');
-function captureBlob() {
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext('2d').drawImage(video, 0, 0);
-  return new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.9));
+if (!imageId) {
+  document.getElementById("preview").innerHTML = "画像 ID がありません。";
 }
 
-/* === IndexedDB === */
-const DB = 'camera-db'; const STORE = 'images';
+// ============================================
+// IndexedDB の画像を読み出す処理
+// ============================================
+const DB = 'camera-db';
+const STORE = 'images';
 let db;
+
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB,1);
-    req.onupgradeneeded = ()=>req.result.createObjectStore(STORE,{keyPath:'id',autoIncrement:true});
-    req.onsuccess = ()=>{ db=req.result; resolve(); };
-    req.onerror = ()=>reject();
-  });
-}
-async function save(blob) {
-  await openDB();
-  const tx = db.transaction(STORE,'readwrite');
-  tx.objectStore(STORE).add({blob,created:Date.now()});
-  tx.oncomplete = showGallery;
-}
-
-/* === ギャラリー表示と選択 === */
-let selectedId = null;
-
-async function getAll() {
-  return new Promise(res=>{
-    const tx = db.transaction(STORE,'readonly');
-    const store = tx.objectStore(STORE);
-    const req = store.getAll();
-    req.onsuccess = ()=>res(req.result);
-  });
-}
-
-async function showGallery() {
-  await openDB();
-  const items = await getAll();
-  const thumbs = document.getElementById('thumbs');
-  thumbs.innerHTML = '';
-
-  items.sort((a,b)=>b.created-a.created);
-
-  for (const it of items) {
-    const url = URL.createObjectURL(it.blob);
-    const img = document.createElement('img');
-    img.src = url;
-    img.className = 'thumb';
-    img.dataset.id = it.id;
-
-    img.onclick = () => {
-      document.querySelectorAll('.thumb').forEach(e=>e.classList.remove('selected'));
-      img.classList.add('selected');
-      selectedId = it.id;
+    const req = indexedDB.open(DB, 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(STORE, { keyPath:'id', autoIncrement:true });
     };
-
-    thumbs.appendChild(img);
-  }
-}
-openDB().then(showGallery);
-
-/* === ボタン === */
-document.getElementById("captureBtn").onclick = async () => {
-  const blob = await captureBlob();
-  const url = URL.createObjectURL(blob);
-  window.open(url, "_blank");
-};
-document.getElementById("saveLocalBtn").onclick = async () => {
-  const blob = await captureBlob();
-  await save(blob);
-};
-
-/* === 選択画像を送信 === */
-document.getElementById("sendBtn").onclick = async () => {
-  if (!selectedId) return alert("送信する画像を選択してください");
-
-  // 選択された画像を取り出す
-  const all = await getAll();
-  const item = all.find(x => x.id == selectedId);
-  if (!item) return alert("画像が見つかりません");
-
-  // Blob → Base64
-  const base64 = await blobToBase64(item.blob);
-
-  // 遷移URL（GET パラメータ）
-  const sendUrl =
-    "https://hachi399.github.io/Dr.Cube/prototype6/analysis/analysis.html" +
-    "?image=" + encodeURIComponent(base64);
-
-  // ページへ遷移（POST が使えないので GET で送る）
-  location.href = sendUrl;
-};
-
-function blobToBase64(blob) {
-  return new Promise(res=>{
-    const r=new FileReader();
-    r.onload=()=>res(r.result.split(',')[1]);
-    r.readAsDataURL(blob);
+    req.onsuccess = () => { db = req.result; resolve(); };
+    req.onerror = () => reject();
   });
 }
 
+async function loadImageFromDB(id) {
+  await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const store = tx.objectStore(STORE);
+    const req = store.get(id);
 
+    req.onsuccess = () => resolve(req.result);
+    req.onerror  = () => reject();
+  });
+}
 
-// === IDだけ送って analysis.html で読み込む ===
+// ============================================
+// 画像を復元して表示
+// ============================================
+(async () => {
+  const item = await loadImageFromDB(imageId);
 
-async function sendSelectedImage(selectedId) {
-  if (!selectedId) {
-    alert("画像が選択されていません");
+  if (!item) {
+    document.getElementById("preview").innerHTML = "画像が見つかりません。";
     return;
   }
 
-  // analysis.html へ画像IDを渡す
-  const url = `https://hachi399.github.io/Dr.Cube/prototype6/analysis/analysis.html?id=${selectedId}`;
-  location.href = url;
-}
-</script>
+  const blob = item.blob;
+  const url = URL.createObjectURL(blob);
 
+  document.getElementById("preview").innerHTML =
+    `<img src="${url}"><p>画像 ID: ${imageId}</p>`;
+})();
+</script>
 </body>
 </html>
