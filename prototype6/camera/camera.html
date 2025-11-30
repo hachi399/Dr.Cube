@@ -70,22 +70,20 @@ function captureBlob() {
   return new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.9));
 }
 
-/* === IndexedDB === */
-const DB = 'camera-db'; const STORE = 'images';
+// === IndexedDB 基本設定 ===
+const DB = 'camera-db';
+const STORE = 'images';
 let db;
+
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB,1);
-    req.onupgradeneeded = ()=>req.result.createObjectStore(STORE,{keyPath:'id',autoIncrement:true});
-    req.onsuccess = ()=>{ db=req.result; resolve(); };
-    req.onerror = ()=>reject();
+    const req = indexedDB.open(DB, 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true });
+    };
+    req.onsuccess = () => { db = req.result; resolve(); };
+    req.onerror = () => reject();
   });
-}
-async function save(blob) {
-  await openDB();
-  const tx = db.transaction(STORE,'readwrite');
-  tx.objectStore(STORE).add({blob,created:Date.now()});
-  tx.oncomplete = showGallery;
 }
 
 /* === ギャラリー表示と選択 === */
