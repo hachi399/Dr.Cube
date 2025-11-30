@@ -3,173 +3,184 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Camera Capture → IndexedDB / Cloud</title>
+  <title>Extended Camera App</title>
   <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; display:flex; gap:20px; padding:20px; }
-    .left{ flex:1; max-width:640px; }
+    body { font-family: sans-serif; display:flex; gap:20px; padding:20px; }
     video, canvas { width:100%; border-radius:12px; background:#000; }
-    .controls { margin-top:10px; display:flex; gap:8px; }
-    button { padding:10px 14px; border-radius:10px; border:0; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,0.15); }
-    .gallery { width:320px; max-height:80vh; overflow:auto; border-left:1px solid #eee; padding-left:16px; }
-    .thumb { width:100%; margin-bottom:12px; border-radius:8px; }
+    button { padding:10px 14px; border-radius:10px; border:0; cursor:pointer; }
+    .gallery { width:320px; max-height:80vh; overflow:auto; border-left:1px solid #ddd; padding-left:10px; }
+    .thumb { width:100%; margin-bottom:10px; border-radius:8px; cursor:pointer; }
+    .selected { outline:4px solid #007bff; }
   </style>
 </head>
 <body>
-  <div class="left">
+  <div style="flex:1;max-width:640px;">
     <h2>カメラ</h2>
     <video id="video" autoplay playsinline></video>
     <canvas id="canvas" style="display:none"></canvas>
-    <div class="controls">
+
+    <div style="margin-top:10px;display:flex;gap:10px;">
+      <button id="cameraToggle">🔌 カメラ停止</button>
       <button id="captureBtn">📸 シャッター</button>
-      <button id="saveLocalBtn">💾 キャッシュに保存</button>
-      <button id="uploadBtn">☁️ クラウドへアップロード</button>
-      <label style="margin-left:auto">
-        <input id="autoUpload" type="checkbox" /> 自動アップロード
-      </label>
+      <button id="saveLocalBtn">💾 保存</button>
     </div>
   </div>
 
   <div class="gallery">
-    <h3>ギャラリー（IndexedDB）</h3>
+    <h3>ギャラリー</h3>
     <div id="thumbs"></div>
+    <button id="sendBtn" style="margin-top:10px;width:100%;">➡️ 選択画像を送信</button>
   </div>
 
 <script>
-/* === カメラ起動 === */
+/* === カメラ制御 === */
+let stream = null;
 const video = document.getElementById('video');
+
 async function startCamera() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
-    video.srcObject = stream;
-  } catch (e) {
-    alert('カメラへのアクセスが拒否されました: ' + e.message);
-  }
+  if (stream) return;
+  stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:false });
+  video.srcObject = stream;
+}
+function stopCamera() {
+  if (!stream) return;
+  stream.getTracks().forEach(t => t.stop());
+  stream = null;
+  video.srcObject = null;
 }
 startCamera();
 
+/* ON / OFF トグル */
+document.getElementById("cameraToggle").onclick = () => {
+  if (stream) {
+    stopCamera();
+    cameraToggle.textContent = "🔌 カメラ開始";
+  } else {
+    startCamera();
+    cameraToggle.textContent = "🔌 カメラ停止";
+  }
+};
+
 /* === キャプチャ === */
 const canvas = document.getElementById('canvas');
-function captureImageBlob() {
-  // videoのサイズをcanvasに合わせる
-  canvas.width = video.videoWidth || 1280;
-  canvas.height = video.videoHeight || 720;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  return new Promise(resolve => {
-    canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.9);
-  });
+function captureBlob() {
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  return new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.9));
 }
 
-/* === IndexedDB: シンプル保存/取得 === */
-const DB_NAME = 'camera-cache-db';
-const STORE = 'images';
+/* === IndexedDB === */
+const DB = 'camera-db'; const STORE = 'images';
 let db;
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => {
-      req.result.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true });
-    };
-    req.onsuccess = () => { db = req.result; resolve(db); };
-    req.onerror = () => reject(req.error);
+    const req = indexedDB.open(DB,1);
+    req.onupgradeneeded = ()=>req.result.createObjectStore(STORE,{keyPath:'id',autoIncrement:true});
+    req.onsuccess = ()=>{ db=req.result; resolve(); };
+    req.onerror = ()=>reject();
   });
 }
-async function saveToIndexedDB(blob, meta={}) {
+async function save(blob) {
   await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite');
-    const store = tx.objectStore(STORE);
-    const item = { blob, createdAt: Date.now(), meta };
-    const req = store.add(item);
-    req.onsuccess = () => { resolve(req.result); displayGallery(); };
-    req.onerror = () => reject(req.error);
-  });
+  const tx = db.transaction(STORE,'readwrite');
+  tx.objectStore(STORE).add({blob,created:Date.now()});
+  tx.oncomplete = showGallery;
 }
-async function getAllFromIndexedDB() {
-  await openDB();
-  return new Promise((resolve,reject) => {
-    const tx = db.transaction(STORE, 'readonly');
+
+/* === ギャラリー表示と選択 === */
+let selectedId = null;
+
+async function getAll() {
+  return new Promise(res=>{
+    const tx = db.transaction(STORE,'readonly');
     const store = tx.objectStore(STORE);
     const req = store.getAll();
-    req.onsuccess = ()=> resolve(req.result);
-    req.onerror = ()=> reject(req.error);
+    req.onsuccess = ()=>res(req.result);
   });
 }
 
-/* === ギャラリー表示 === */
-const thumbs = document.getElementById('thumbs');
-async function displayGallery() {
+async function showGallery() {
+  await openDB();
+  const items = await getAll();
+  const thumbs = document.getElementById('thumbs');
   thumbs.innerHTML = '';
-  const items = await getAllFromIndexedDB();
-  // 最新順
-  items.sort((a,b)=>b.createdAt - a.createdAt);
+
+  items.sort((a,b)=>b.created-a.created);
+
   for (const it of items) {
     const url = URL.createObjectURL(it.blob);
     const img = document.createElement('img');
     img.src = url;
     img.className = 'thumb';
-    img.title = new Date(it.createdAt).toLocaleString();
+    img.dataset.id = it.id;
+
     img.onclick = () => {
-      // クリックでダウンロード
-      const a = document.createElement('a');
-      a.href = url; a.download = `photo_${it.id}.jpg`; a.click();
+      document.querySelectorAll('.thumb').forEach(e=>e.classList.remove('selected'));
+      img.classList.add('selected');
+      selectedId = it.id;
     };
+
     thumbs.appendChild(img);
   }
 }
+openDB().then(showGallery);
 
-/* === ボタン操作 === */
-document.getElementById('captureBtn').addEventListener('click', async () => {
-  const blob = await captureImageBlob();
-  // プレビューで一時的に表示（任意）
-  const win = window.open(URL.createObjectURL(blob), '_blank');
-  setTimeout(()=>win?.close(), 1500);
-});
-document.getElementById('saveLocalBtn').addEventListener('click', async () => {
-  const blob = await captureImageBlob();
-  await saveToIndexedDB(blob, { source: 'manual' });
-  alert('キャッシュに保存しました');
-});
-document.getElementById('uploadBtn').addEventListener('click', async () => {
-  const blob = await captureImageBlob();
-  await saveToIndexedDB(blob, { source: 'upload-click' });
-  // cloudUploadは以下で定義（Firebase/S3それぞれの実装に差し替え）
-  try {
-    await cloudUploadBlob(blob);
-    alert('クラウドへアップロードしました');
-  } catch (e) {
-    alert('アップロード失敗: ' + e.message);
-  }
-});
-document.getElementById('autoUpload').addEventListener('change', (e) => {
-  // 自動アップロードチェック：シャッター直後に自動でクラウドに送る
-});
+/* === ボタン === */
+document.getElementById("captureBtn").onclick = async () => {
+  const blob = await captureBlob();
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank");
+};
+document.getElementById("saveLocalBtn").onclick = async () => {
+  const blob = await captureBlob();
+  await save(blob);
+};
 
-/* 自動処理サンプル：シャッターを押したら自動で保存＋アップロード */
-async function captureSaveMaybeUpload() {
-  const blob = await captureImageBlob();
-  await saveToIndexedDB(blob, { source: 'auto' });
-  if (document.getElementById('autoUpload').checked) {
-    try { await cloudUploadBlob(blob); } catch(e){ console.warn('auto upload fail', e); }
-  }
+/* === 選択画像を送信 === */
+document.getElementById("sendBtn").onclick = async () => {
+  if (!selectedId) return alert("送信する画像を選択してください");
+
+  // 選択された画像を取り出す
+  const all = await getAll();
+  const item = all.find(x => x.id == selectedId);
+  if (!item) return alert("画像が見つかりません");
+
+  // Blob → Base64
+  const base64 = await blobToBase64(item.blob);
+
+  // 遷移URL（GET パラメータ）
+  const sendUrl =
+    "https://hachi399.github.io/Dr.Cube/prototype6/analysis/analysis.html" +
+    "?image=" + encodeURIComponent(base64);
+
+  // ページへ遷移（POST が使えないので GET で送る）
+  location.href = sendUrl;
+};
+
+function blobToBase64(blob) {
+  return new Promise(res=>{
+    const r=new FileReader();
+    r.onload=()=>res(r.result.split(',')[1]);
+    r.readAsDataURL(blob);
+  });
 }
-// 例：ダブルクリックで自動保存+アップロード
-video.addEventListener('dblclick', captureSaveMaybeUpload);
 
-/* 初期ギャラリー読み込み */
-openDB().then(displayGallery).catch(e=>console.warn(e));
 
-/* === クラウドアップロードの「呼び出し先」関数（具体実装は下のセクション参照） === */
-async function cloudUploadBlob(blob) {
-  // デフォルトは「バックエンドにPOSTして保存」する実装の想定
-  // ここでは fetch で /upload に送る例。
-  // もし Firebase を使うなら、Firebase SDK を使って直接 Storage にアップロードしてください。
-  const form = new FormData();
-  form.append('file', blob, 'photo.jpg');
-  const res = await fetch('/upload', { method: 'POST', body: form });
-  if (!res.ok) throw new Error('upload failed: ' + res.statusText);
-  return res.json(); // { url: 'https://...' } など
+
+// === IDだけ送って analysis.html で読み込む ===
+
+async function sendSelectedImage(selectedId) {
+  if (!selectedId) {
+    alert("画像が選択されていません");
+    return;
+  }
+
+  // analysis.html へ画像IDを渡す
+  const url = `https://hachi399.github.io/Dr.Cube/prototype6/analysis/analysis2.html?id=${selectedId}`;
+  location.href = url;
 }
 </script>
+
 </body>
 </html>
