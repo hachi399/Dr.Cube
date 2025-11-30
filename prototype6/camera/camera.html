@@ -23,9 +23,13 @@
 
   </main>
 
-  <script src="keep_server.js"></script>
   <script>
-    const API_URL = "https://dr-cube-1.onrender.com/chat"; // Render のURLに置き換え
+  // keep_server.js が参照する URL を先に定義しておく
+  window.API_URL = '/api/keep_alive'; // 必要に応じてフルURLにする
+</script>
+
+  <script src="../overall/keep_server.js" defer></script>
+  <script>
     const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
     const toggleBtn = document.getElementById("toggleBtn");
