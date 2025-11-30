@@ -1,167 +1,175 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>Dr.Cube AI解析 / Team.ぐんまちゃん</title>
-  <link rel="stylesheet" href="extremeStyle.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Camera Capture → IndexedDB / Cloud</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; display:flex; gap:20px; padding:20px; }
+    .left{ flex:1; max-width:640px; }
+    video, canvas { width:100%; border-radius:12px; background:#000; }
+    .controls { margin-top:10px; display:flex; gap:8px; }
+    button { padding:10px 14px; border-radius:10px; border:0; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,0.15); }
+    .gallery { width:320px; max-height:80vh; overflow:auto; border-left:1px solid #eee; padding-left:16px; }
+    .thumb { width:100%; margin-bottom:12px; border-radius:8px; }
+  </style>
 </head>
-
 <body>
-
-  
-
-  <!-- ===== メインコンテンツ ===== -->
-  <main id="main">
-    <h1>Dr.Cube CAMERASTREAM /</h1>
-
-    
-
-    <h3>カメラ映像</h3>
-    <button id="toggleBtn">▶ カメラON</button>
+  <div class="left">
+    <h2>カメラ</h2>
     <video id="video" autoplay playsinline></video>
-    <canvas id="canvas" style="display:none;"></canvas>
+    <canvas id="canvas" style="display:none"></canvas>
+    <div class="controls">
+      <button id="captureBtn">📸 シャッター</button>
+      <button id="saveLocalBtn">💾 キャッシュに保存</button>
+      <button id="uploadBtn">☁️ クラウドへアップロード</button>
+      <label style="margin-left:auto">
+        <input id="autoUpload" type="checkbox" /> 自動アップロード
+      </label>
+    </div>
+  </div>
 
-  </main>
+  <div class="gallery">
+    <h3>ギャラリー（IndexedDB）</h3>
+    <div id="thumbs"></div>
+  </div>
 
-  <script>
-  // keep_server.js が参照する URL を先に定義しておく
-  window.API_URL = '/api/keep_alive'; // 必要に応じてフルURLにする
-</script>
-
-  <script src="../overall/keep_server.js" defer></script>
-  <script>
-    const video = document.getElementById("video");
-    const canvas = document.getElementById("canvas");
-    const toggleBtn = document.getElementById("toggleBtn");
-
-    let stream = null;
-    let cameraOn = false;
-    let autoCaptureInterval = null;
-  
-
-    
-    // `#input` may not exist on this page. guard to avoid runtime errors
-    const inputEl = document.getElementById("input");
-    if (inputEl) {
-      inputEl.addEventListener("keydown", function(event) {
-        if (event.key === "Enter") {
-          if (typeof sendMessage === "function") sendMessage();
-        }
-      });
-    }
-    // ====== シャープネス（ピント合い具合）計算 ======
-    function calcSharpness(data, width, height) {
-      let diffSum = 0;
-      for (let y = 0; y < height - 1; y++) {
-        for (let x = 0; x < width - 1; x++) {
-          const i = (y * width + x) * 4;
-          const lum = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
-
-          const ir = (y * width + (x + 1)) * 4;
-          const lumR = 0.2126 * data[ir] + 0.7152 * data[ir + 1] + 0.0722 * data[ir + 2];
-
-          const id = ((y + 1) * width + x) * 4;
-          const lumD = 0.2126 * data[id] + 0.7152 * data[id + 1] + 0.0722 * data[id + 2];
-
-          diffSum += Math.abs(lum - lumR) + Math.abs(lum - lumD);
-        }
-      }
-      const count = (width - 1) * (height - 1) * 2;
-      return count > 0 ? diffSum / count : 0;
-    }
-
-    // ====== ピント検出と自動撮影 ======
-    function detectFocusAndCapture(video, canvas) {
-      const ctx = canvas.getContext("2d");
-      const CHECK_INTERVAL_MS = 1000;
-      const MAX_ANALYSIS_WIDTH = 320;
-      const SHARPNESS_THRESHOLD = 3.5;
-      const COOLDOWN_MS = 5000;
-      const analysisCanvas = document.createElement('canvas');
-      const analysisCtx = analysisCanvas.getContext('2d');
-      let lastCaptureTime = 0;
-
-      // intervalIdを返して停止できるようにする
-      const intervalId = setInterval(async () => {
-        if (!video.srcObject) return;
-        if (video.videoWidth === 0 || video.videoHeight === 0) return;
-
-        const scale = Math.min(1, MAX_ANALYSIS_WIDTH / video.videoWidth);
-        const aw = Math.floor(video.videoWidth * scale);
-        const ah = Math.floor(video.videoHeight * scale);
-        analysisCanvas.width = aw;
-        analysisCanvas.height = ah;
-        analysisCtx.drawImage(video, 0, 0, aw, ah);
-
-        const imageData = analysisCtx.getImageData(0, 0, aw, ah);
-        const sharpness = calcSharpness(imageData.data, aw, ah);
-        console.debug('sharpness=', sharpness);
-
-        if (sharpness > SHARPNESS_THRESHOLD) {
-          const now = Date.now();
-          if (now - lastCaptureTime > COOLDOWN_MS) {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const base64Image = canvas.toDataURL("image/png");
-            console.log('📸 ピント検出、AIに送信します...');
-            await analyzeImage(base64Image);
-            lastCaptureTime = now;
-          }
-        }
-      }, CHECK_INTERVAL_MS);
-
-      return intervalId;
-    }
-
-  
-    async function startCamera() {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        video.srcObject = stream;
-        cameraOn = true;
-        toggleBtn.textContent = "⏹ カメラOFF";
-        toggleBtn.classList.add("off");
-        console.log("✅ カメラ起動");
-        if (!autoCaptureInterval) {
-          autoCaptureInterval = detectFocusAndCapture(video, canvas);
-        }
-      } catch (err) {
-        alert("カメラを許可してください: " + err);
-      }
-    }
-
-    function stopCamera() {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-        video.srcObject = null;
-        stream = null;
-      }
-      if (autoCaptureInterval) {
-        clearInterval(autoCaptureInterval);
-        autoCaptureInterval = null;
-      }
-      cameraOn = false;
-      toggleBtn.textContent = "▶ カメラON";
-      toggleBtn.classList.remove("off");
-      console.log("🛑 カメラ停止");
-    }
-
-    // ====== トグルボタン操作 ======
-    toggleBtn.addEventListener("click", () => {
-      if (cameraOn) stopCamera();
-      else startCamera();
-    });
-    
-document.addEventListener("mouseup", (e) => {
-  const selectedText = window.getSelection().toString().trim();
-  if (selectedText.length > 0) {
-    e.stopPropagation();  // 👈 他イベントへの伝播を止める
-    // AI送信処理など...
+<script>
+/* === カメラ起動 === */
+const video = document.getElementById('video');
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+    video.srcObject = stream;
+  } catch (e) {
+    alert('カメラへのアクセスが拒否されました: ' + e.message);
   }
-}, false);
-</script>
+}
+startCamera();
 
- 
+/* === キャプチャ === */
+const canvas = document.getElementById('canvas');
+function captureImageBlob() {
+  // videoのサイズをcanvasに合わせる
+  canvas.width = video.videoWidth || 1280;
+  canvas.height = video.videoHeight || 720;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  return new Promise(resolve => {
+    canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.9);
+  });
+}
+
+/* === IndexedDB: シンプル保存/取得 === */
+const DB_NAME = 'camera-cache-db';
+const STORE = 'images';
+let db;
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true });
+    };
+    req.onsuccess = () => { db = req.result; resolve(db); };
+    req.onerror = () => reject(req.error);
+  });
+}
+async function saveToIndexedDB(blob, meta={}) {
+  await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    const store = tx.objectStore(STORE);
+    const item = { blob, createdAt: Date.now(), meta };
+    const req = store.add(item);
+    req.onsuccess = () => { resolve(req.result); displayGallery(); };
+    req.onerror = () => reject(req.error);
+  });
+}
+async function getAllFromIndexedDB() {
+  await openDB();
+  return new Promise((resolve,reject) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const store = tx.objectStore(STORE);
+    const req = store.getAll();
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error);
+  });
+}
+
+/* === ギャラリー表示 === */
+const thumbs = document.getElementById('thumbs');
+async function displayGallery() {
+  thumbs.innerHTML = '';
+  const items = await getAllFromIndexedDB();
+  // 最新順
+  items.sort((a,b)=>b.createdAt - a.createdAt);
+  for (const it of items) {
+    const url = URL.createObjectURL(it.blob);
+    const img = document.createElement('img');
+    img.src = url;
+    img.className = 'thumb';
+    img.title = new Date(it.createdAt).toLocaleString();
+    img.onclick = () => {
+      // クリックでダウンロード
+      const a = document.createElement('a');
+      a.href = url; a.download = `photo_${it.id}.jpg`; a.click();
+    };
+    thumbs.appendChild(img);
+  }
+}
+
+/* === ボタン操作 === */
+document.getElementById('captureBtn').addEventListener('click', async () => {
+  const blob = await captureImageBlob();
+  // プレビューで一時的に表示（任意）
+  const win = window.open(URL.createObjectURL(blob), '_blank');
+  setTimeout(()=>win?.close(), 1500);
+});
+document.getElementById('saveLocalBtn').addEventListener('click', async () => {
+  const blob = await captureImageBlob();
+  await saveToIndexedDB(blob, { source: 'manual' });
+  alert('キャッシュに保存しました');
+});
+document.getElementById('uploadBtn').addEventListener('click', async () => {
+  const blob = await captureImageBlob();
+  await saveToIndexedDB(blob, { source: 'upload-click' });
+  // cloudUploadは以下で定義（Firebase/S3それぞれの実装に差し替え）
+  try {
+    await cloudUploadBlob(blob);
+    alert('クラウドへアップロードしました');
+  } catch (e) {
+    alert('アップロード失敗: ' + e.message);
+  }
+});
+document.getElementById('autoUpload').addEventListener('change', (e) => {
+  // 自動アップロードチェック：シャッター直後に自動でクラウドに送る
+});
+
+/* 自動処理サンプル：シャッターを押したら自動で保存＋アップロード */
+async function captureSaveMaybeUpload() {
+  const blob = await captureImageBlob();
+  await saveToIndexedDB(blob, { source: 'auto' });
+  if (document.getElementById('autoUpload').checked) {
+    try { await cloudUploadBlob(blob); } catch(e){ console.warn('auto upload fail', e); }
+  }
+}
+// 例：ダブルクリックで自動保存+アップロード
+video.addEventListener('dblclick', captureSaveMaybeUpload);
+
+/* 初期ギャラリー読み込み */
+openDB().then(displayGallery).catch(e=>console.warn(e));
+
+/* === クラウドアップロードの「呼び出し先」関数（具体実装は下のセクション参照） === */
+async function cloudUploadBlob(blob) {
+  // デフォルトは「バックエンドにPOSTして保存」する実装の想定
+  // ここでは fetch で /upload に送る例。
+  // もし Firebase を使うなら、Firebase SDK を使って直接 Storage にアップロードしてください。
+  const form = new FormData();
+  form.append('file', blob, 'photo.jpg');
+  const res = await fetch('/upload', { method: 'POST', body: form });
+  if (!res.ok) throw new Error('upload failed: ' + res.statusText);
+  return res.json(); // { url: 'https://...' } など
+}
+</script>
 </body>
 </html>
