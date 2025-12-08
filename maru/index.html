@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width,initial-scale=1">
+	<title>Dr.Cube — マルページ</title>
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+	<header class="site-header">
+		<div class="container header-inner">
+			<h1 class="logo">Dr.Cube</h1>
+			<nav class="nav">
+				<a href="#about">About</a>
+				<a href="#features">Features</a>
+				<a href="#contact">Contact</a>
+			</nav>
+		</div>
+	</header>
+
+	<main>
+		<section class="hero">
+			<div class="container">
+				<h2>ようこそ — シンプルなデモサイト</h2>
+				<p>このページは `maru` フォルダ内の簡単な HTML/CSS/JS サンプルです。</p>
+				<div class="hero-actions">
+					<button id="learnBtn" class="btn">学ぶ</button>
+					<a class="btn ghost" href="#contact">お問い合わせ</a>
+				</div>
+			</div>
+		</section>
+
+		<section id="about" class="container section">
+			<h3>About</h3>
+			<p>これはサンプルの「簡単な HTML サイト」です。レイアウト、スタイル、インタラクションの例を含みます。</p>
+		</section>
+
+		<section id="features" class="container section features">
+			<h3>Features</h3>
+			<ul>
+				<li>レスポンシブなレイアウト</li>
+				<li>軽量な CSS</li>
+				<li>簡単な JavaScript インタラクション</li>
+			</ul>
+		</section>
+
+		<section id="contact" class="container section">
+			<h3>Contact</h3>
+			<form id="contactForm" class="contact-form">
+				<label>お名前 <input type="text" name="name" required></label>
+				<label>メール <input type="email" name="email" required></label>
+				<label>メッセージ <textarea name="message" rows="4" required></textarea></label>
+				<div class="form-actions">
+					<button type="submit" class="btn">送信</button>
+					<button type="button" id="resetBtn" class="btn ghost">リセット</button>
+				</div>
+			</form>
+			<div id="formResult" class="form-result" aria-live="polite"></div>
+		</section>
+	</main>
+
+	<footer class="site-footer">
+		<div class="container">© Dr.Cube — Demo</div>
+	</footer>
+
+	<script src="script.js"></script>
+</body>
+</html>
