@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>3段階連想ブレインストーム（密レイアウト - 安定版）</title>
+  <style>
+    body{margin:0;font-family:system-ui,Inter,Roboto,sans-serif;background:#fafafa}
+    #graph{width:100vw;height:100vh;background:#fff}
+    .controls{position:fixed;top:10px;left:10px;display:flex;gap:8px;align-items:center;background:rgba(255,255,255,0.95);padding:8px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.06);z-index:10}
+    input{padding:8px 10px;font-size:14px;border:1px solid #ddd;border-radius:6px}
+    button{padding:8px 12px;font-size:14px;border-radius:6px;border:none;background:#ff7b50;color:#fff;cursor:pointer}
+    button[disabled]{opacity:0.6;cursor:default}
+    .notice{font-size:13px;color:#666}
+    .tooltip{position:fixed;pointer-events:none;padding:6px 10px;background:rgba(0,0,0,0.85);color:#fff;border-radius:6px;font-size:12px;z-index:10000;display:none;max-width:320px}
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <input id="seedInput" type="text" placeholder="親ノード名（例：音楽）" />
+    <button id="addSeedBtn">生成（親→子6→孫6×3）</button>
+    <div class="notice">※孫ノード以上は生成しません</div>
+  </div>
+
+  <svg id="graph"></svg>
+  <div id="tooltip" class="tooltip"></div>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+    // 状態
+    let nodes = [];
+    let links = [];
+    let idCounter = 0;
+
+    const svg = d3.select('#graph');
+    const tooltip = d3.select('#tooltip');
+    const getW = () => window.innerWidth;
+    const getH = () => window.innerHeight;
+    svg.attr('width', getW()).attr('height', getH());
+
+    // レイアウトパラメータ
+    const LINK_PARENT_CHILD = 45;
+    const LINK_CHILD_GRAND = 60;
+
+    // 力学レイアウト（全体をやや密に保つ）
+    const simulation = d3.forceSimulation()
+      .force('link', d3.forceLink().id(d=>d.id).distance(link => {
+        const sDepth = (link && link.source && typeof link.source.depth === 'number') ? link.source.depth : 0;
+        const tDepth = (link && link.target && typeof link.target.depth === 'number') ? link.target.depth : 1;
+        return (sDepth === 0 && tDepth === 1) ? LINK_PARENT_CHILD : LINK_CHILD_GRAND;
+      }))
+      .force('charge', d3.forceManyBody().strength(-80))
+      .force('center', d3.forceCenter(getW()/2, getH()/2))
+      .force('collision', d3.forceCollide(22))
+      .on('tick', ticked);
+
+    const linkG = svg.append('g').attr('class','links');
+    const nodeG = svg.append('g').attr('class','nodes');
+
+    function makeId(){ return 'n' + (++idCounter); }
+    function findNodeById(id){ return nodes.find(n=>n.id===id); }
+
+    // API キー（ブラウザに直接埋める場合は注意）
+    const API_KEY = '';
+
+    // ---- OpenAI: 連想語取得 (6個) ----
+    async function fetch6(word){
+      try{
+        const res = await fetch('https://api.openai.com/v1/responses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${API_KEY}` },
+          body: JSON.stringify({ model: 'gpt-4o-mini', input: `「${word}」から連想される短い単語を6つ、日本語で出してください。単語のみを改行かカンマで区切ってください。` })
+        });
+        const json = await res.json();
+        let text = '';
+        if(typeof json.output_text === 'string') text = json.output_text;
+        else if(Array.isArray(json.output) && json.output.length>0){
+          const out0 = json.output[0];
+          if(Array.isArray(out0.content)) text = out0.content.map(c=>c.text||'').join('\n');
+          else if(typeof out0.text === 'string') text = out0.text;
+        }
+        if(!text) return [];
+        return String(text).split(/[、,\n]+/).map(s=>s.trim()).filter(Boolean).slice(0,6);
+      }catch(e){ console.error('fetch6', e); return []; }
+    }
+
+    // ---- OpenAI: 連想理由取得 (2-3行) ----
+    async function fetchReason(a,b){
+      try{
+        const prompt = '次の2つの概念「' + a + '」と「' + b + '」の関連性を、因果・機能・共通性・背景などを踏まえて日本語で2〜3行にまとめてください。簡潔にお願いします。';
+        const res = await fetch('https://api.openai.com/v1/responses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + API_KEY },
+          body: JSON.stringify({ model: 'gpt-4o-mini', input: prompt })
+        });
+        const json = await res.json();
+        let text = '';
+        if(typeof json.output_text === 'string') text = json.output_text;
+        else if(Array.isArray(json.output) && json.output.length>0){
+          const out0 = json.output[0];
+          if(Array.isArray(out0.content)) text = out0.content.map(c=>c.text||'').join('\n');
+          else if(typeof out0.text === 'string') text = out0.text;
+        }
+        return (text && text.trim()) ? text.trim() : (a + ' と ' + b + ' の関連');
+      }catch(e){ console.error('fetchReason', e); return a + ' → ' + b + ' の関連'; }
+    }
+
+    // addNode: depth 0=親,1=子,2=孫
+    function addNode(name, parentId=null, depth=0){
+      const n = { id: makeId(), name, depth };
+      // 初期位置は親の近傍（あるいは中心）
+      let px = getW()/2, py = getH()/2;
+      if(parentId){ const p = findNodeById(parentId); if(p && typeof p.x === 'number'){ px = p.x; py = p.y; } }
+      const ang = Math.random()*Math.PI*2;
+      const baseDist = parentId ? 40 : 20; // 親から子/孫は親近くに生成
+      n.x = px + Math.cos(ang)*baseDist;
+      n.y = py + Math.sin(ang)*baseDist;
+
+      nodes.push(n);
+
+      if(parentId){
+        const pNode = findNodeById(parentId);
+        const linkObj = { id: 'l' + links.length, source: pNode, target: n, reason: '連想理由を生成中...' };
+        links.push(linkObj);
+        // 非同期で理由を取得してリンクオブジェクトを更新
+        fetchReason(pNode.name, n.name).then(r => { linkObj.reason = r || `${pNode.name} → ${n.name}`; });
+      }
+
+      return n;
+    }
+
+    function restart(){
+      // LINKS (groups with wide invisible hit area)
+      const linkSel = linkG.selectAll('g.link').data(links, d=>d.id);
+      linkSel.exit().remove();
+      const linkEnter = linkSel.enter().append('g').attr('class','link');
+      linkEnter.append('line').attr('class','hit').attr('stroke','transparent').attr('stroke-width',20);
+      linkEnter.append('line').attr('class','visible').attr('stroke','#bfbfbf').attr('stroke-width',2);
+      const linkMerge = linkEnter.merge(linkSel);
+
+      linkMerge.on('mouseover', (event,d)=>{ tooltip.style('display','block').text(d.reason || ''); })
+        .on('mousemove', event=>{ tooltip.style('left',(event.pageX+12)+'px').style('top',(event.pageY+12)+'px'); })
+        .on('mouseout', ()=>{ tooltip.style('display','none'); });
+
+      // NODES
+      const nodeSel = nodeG.selectAll('g.node').data(nodes, d=>d.id);
+      nodeSel.exit().remove();
+      const nodeEnter = nodeSel.enter().append('g').attr('class','node');
+      nodeEnter.append('circle').attr('r',16).attr('fill','#ffdca8').attr('stroke','#e6a86b').attr('stroke-width',2);
+      nodeEnter.append('text').attr('dy',4).attr('text-anchor','middle').style('font-size','11px').text(d=>d.name);
+
+      // restart simulation
+      simulation.nodes(nodes);
+      simulation.force('link').links(links);
+      simulation.alpha(0.9).restart();
+    }
+
+    function ticked(){
+      nodeG.selectAll('g.node').attr('transform', d=>`translate(${d.x},${d.y})`);
+      linkG.selectAll('g.link').each(function(d){
+        d3.select(this).select('line.hit').attr('x1',d.source.x).attr('y1',d.source.y).attr('x2',d.target.x).attr('y2',d.target.y);
+        d3.select(this).select('line.visible').attr('x1',d.source.x).attr('y1',d.source.y).attr('x2',d.target.x).attr('y2',d.target.y);
+      });
+    }
+
+    // ボタン処理（親を入れたら子6、孫3ずつ生成）
+    document.getElementById('addSeedBtn').addEventListener('click', async ()=>{
+      const seed = document.getElementById('seedInput').value.trim();
+      if(!seed){ alert('親ノード名を入力してください'); return; }
+
+      // リセットして新規生成
+      nodes = []; links = []; idCounter = 0; restart();
+
+      const parent = addNode(seed, null, 0);
+      restart();
+
+      const childWords = await fetch6(seed);
+      while(childWords.length < 6) childWords.push(seed + '_child');
+      for(const c of childWords){
+        const child = addNode(c, parent.id, 1);
+        restart();
+        const grandWords = await fetch6(c);
+        while(grandWords.length < 3) grandWords.push(c + '_grand');
+        for(const g of grandWords){ addNode(g, child.id, 2); }
+        restart();
+      }
+    });
+
+    // レスポンシブ
+    window.addEventListener('resize', ()=>{
+      svg.attr('width', getW()).attr('height', getH());
+      simulation.force('center', d3.forceCenter(getW()/2, getH()/2));
+      simulation.alpha(0.3).restart();
+    });
+  </script>
+</body>
+</html>
