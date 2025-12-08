@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>3段階連想ブレインストーム（密レイアウト - 安定版）</title>
+  <style>
+    body{margin:0;font-family:system-ui,Inter,Roboto,sans-serif;background:#fafafa}
+    #graph{width:100vw;height:100vh;background:#fff}
+    .controls{position:fixed;top:10px;left:10px;display:flex;gap:8px;align-items:center;background:rgba(255,255,255,0.95);padding:8px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.06);z-index:10}
+    input{padding:8px 10px;font-size:14px;border:1px solid #ddd;border-radius:6px}
+    button{padding:8px 12px;font-size:14px;border-radius:6px;border:none;background:#ff7b50;color:#fff;cursor:pointer}
+    button[disabled]{opacity:0.6;cursor:default}
+    .notice{font-size:13px;color:#666}
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <input id="seedInput" type="text" placeholder="親ノード名（例：音楽）" />
+    <button id="addSeedBtn">生成（親→子6→孫6×6）</button>
+    <button id="balanceBtn" title="ノードを深さごとに円状に均等配置">均等配置</button>
+    <button id="releaseBtn" title="均等配置を解除して力学レイアウトに戻す">配置解除</button>
+    <div class="notice">※孫ノード以上は生成しません</div>
+  </div>
+
+  <svg id="graph"></svg>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+    // --- 状態 ---
+    let nodes = [];
+    let links = [];
+    let idCounter = 0;
+
+    const svg = d3.select('#graph');
+    const getW = () => window.innerWidth;
+    const getH = () => window.innerHeight;
+    svg.attr('width', getW()).attr('height', getH());
+
+    // --- レイアウトパラメータ（必要ならここを変更） ---
+    const LINK_PARENT_CHILD = 35; // 親→子の目標距離（px）
+    const LINK_CHILD_GRAND = 60;  // 子→孫の目標距離（px）
+
+    // --- 力学レイアウト ---
+    const simulation = d3.forceSimulation()
+      .force('link', d3.forceLink().id(d=>d.id).distance(link => {
+        try{
+          const sDepth = link && link.source && typeof link.source.depth === 'number' ? link.source.depth : 0;
+          const tDepth = link && link.target && typeof link.target.depth === 'number' ? link.target.depth : 1;
+          if(sDepth === 0 && tDepth === 1) return LINK_PARENT_CHILD;
+          return LINK_CHILD_GRAND;
+        }catch(e){ return LINK_CHILD_GRAND; }
+      }))
+      .force('charge', d3.forceManyBody().strength(-80))
+      .force('center', d3.forceCenter(getW()/2, getH()/2))
+      .force('collision', d3.forceCollide(25))
+      .on('tick', ticked);
+
+    const linkG = svg.append('g').attr('class','links');
+    const nodeG = svg.append('g').attr('class','nodes');
+
+    function makeId(){ return 'n' + (++idCounter); }
+    function findNodeById(id){ return nodes.find(n=>n.id===id); }
+
+    // addNode: depth を必ず渡す（0=親,1=子,2=孫）
+    function addNode(name, parentId=null, depth=0){
+      const n = { id: makeId(), name, depth };
+      // 初期位置: 親があれば親の近傍に、なければ中心付近
+      let px = getW()/2, py = getH()/2;
+      if(parentId){
+        const p = findNodeById(parentId);
+        if(p && typeof p.x === 'number'){
+          px = p.x;
+          py = p.y;
+        }
+      }
+      // 親の近くにランダムに散らすことで、simulation が自然に広げやすくする
+      const angle = Math.random()*Math.PI*2;
+      const baseDist = parentId ? 40 : 20; // 親からの初期距離（子・孫は親の近くに生む）
+      n.x = px + Math.cos(angle)*baseDist;
+      n.y = py + Math.sin(angle)*baseDist;
+
+      nodes.push(n);
+      if(parentId){
+        const parentNode = findNodeById(parentId);
+        if(parentNode){ links.push({ id: 'l' + links.length, source: parentNode, target: n }); }
+      }
+      return n;
+    }
+
+    function restart(){
+      // LINKS
+      const link = linkG.selectAll('line').data(links, d=>d.id);
+      link.exit().remove();
+      link.enter().append('line').attr('stroke','#bfbfbf').attr('stroke-width',2).merge(link);
+
+      // NODES
+      const node = nodeG.selectAll('g').data(nodes, d=>d.id);
+      node.exit().remove();
+
+      const nodeEnter = node.enter().append('g');
+      nodeEnter.append('circle').attr('r',16).attr('fill','#ffdca8').attr('stroke','#e6a86b').attr('stroke-width',2);
+      nodeEnter.append('text').attr('dy',4).attr('text-anchor','middle').style('font-size','11px').text(d=>d.name);
+
+      // update simulation data and restart
+      simulation.nodes(nodes);
+      simulation.force('link').links(links);
+      simulation.alpha(0.9).restart();
+    }
+
+    function ticked(){
+      nodeG.selectAll('g').attr('transform', d=>`translate(${d.x},${d.y})`);
+      linkG.selectAll('line')
+        .attr('x1', d=>d.source.x)
+        .attr('y1', d=>d.source.y)
+        .attr('x2', d=>d.target.x)
+        .attr('y2', d=>d.target.y);
+    }
+
+    // ---- OpenAI API を使用した連想関数（Responses API） ----
+    // APIキーはここに埋め込む（注意: ブラウザにキーが露出します。公開しないでください）
+    const API_KEY = "";
+
+    // fetch6 を汎用化: 指定数を返す fetchWords(word, count)
+    async function fetchWords(word, count = 6){
+      try{
+        const res = await fetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${API_KEY}`
+          },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            input: `「${word}」から連想される短い単語を${count}つ、日本語で出してください。出力は単語のみ、改行かカンマで区切ってください。より突飛な連想でよろしく`,
+          })
+        });
+
+        const json = await res.json();
+        // robust extract text
+        let text = '';
+        if(json.output_text && typeof json.output_text === 'string'){
+          text = json.output_text;
+        } else if(json.output && Array.isArray(json.output) && json.output.length>0){
+          const out0 = json.output[0];
+          if(out0 && Array.isArray(out0.content)){
+            text = out0.content.map(c=> c.text || '').join('\n');
+          } else if(typeof out0 === 'string'){
+            text = out0;
+          } else if(out0 && out0.text){
+            text = out0.text;
+          }
+        }
+
+        if(!text) return [];
+
+        // split by comma, japanese comma (U+3001), newline
+        const parts = String(text).split(/[,\u3001\n]+/).map(s=>s.trim()).filter(Boolean);
+        return parts.slice(0, count);
+      }catch(err){
+        console.error('fetchWords error', err);
+        return [];
+      }
+    }
+
+    // ---- ボタン処理 ----
+    document.getElementById('addSeedBtn').addEventListener('click', async ()=>{ 
+      const seed = document.getElementById('seedInput').value.trim();
+      if(!seed){ alert('親ノード名を入力してください'); return; }
+
+      const btn = document.getElementById('addSeedBtn');
+      btn.disabled = true;
+      btn.textContent = '生成中...';
+
+      // 生成数を変数化
+      const CHILD_COUNT = 6;
+      const GRAND_COUNT = 3;
+
+      try{
+        // 親
+        const parent = addNode(seed, null, 0);
+        restart();
+
+        // 子ノード CHILD_COUNT
+        let childWords = await fetchWords(seed, CHILD_COUNT);
+        while(childWords.length < CHILD_COUNT) childWords.push(seed + '_child');
+        const children = childWords.map(w => addNode(w, parent.id, 1));
+        restart();
+
+        // 各子から孫を GRAND_COUNT ずつ取得し追加
+        for(const child of children){
+          let grandWords = await fetchWords(child.name, GRAND_COUNT);
+          // 足りなければパディング
+          while (grandWords.length < GRAND_COUNT) grandWords.push(child.name + '_grand');
+          grandWords.forEach(w => addNode(w, child.id, 2));
+          restart();
+          await new Promise(r=>setTimeout(r, 80));
+        }
+        // 生成完了時に自動で均等配置（必要なければこの行を削除）
+        arrangeInCircles();
+      }finally{
+        btn.disabled = false;
+        btn.textContent = '生成（親→子6→孫6×6）';
+        document.getElementById('seedInput').value = '';
+      }
+    });
+
+    // --- 均等円配置 --- 
+    // depthごとに同心円上にノードを均等配置し、各ノードのfx/fyに固定する
+    function arrangeInCircles(options = {}) {
+      const cx = getW()/2;
+      const cy = getH()/2;
+      const baseRadius = options.baseRadius || Math.min(getW(), getH()) * 0.18;
+
+      // グループ化
+      const groups = nodes.reduce((acc, n) => {
+        (acc[n.depth] || (acc[n.depth] = [])).push(n);
+        return acc;
+      }, {});
+
+      Object.keys(groups).forEach(key => {
+        const depth = Number(key);
+        const list = groups[key];
+        if (depth === 0) {
+          // 中心に一つ（または複数でもごく近くに配置）
+          const spread = Math.max(0, Math.min(8, list.length - 1));
+          list.forEach((n, i) => {
+            const angle = (i / Math.max(1, list.length)) * Math.PI * 2;
+            const r = Math.max(8, spread ? 8 : 0);
+            n.fx = cx + Math.cos(angle) * r;
+            n.fy = cy + Math.sin(angle) * r;
+          });
+        } else {
+          const r = baseRadius * depth;
+          const step = 2 * Math.PI / Math.max(1, list.length);
+          // 小さなランダムオフセットで重なりを減らす
+          const jitter = 0.08;
+          list.forEach((n, i) => {
+            const angle = i * step + (Math.random() - 0.5) * jitter;
+            n.fx = cx + Math.cos(angle) * r;
+            n.fy = cy + Math.sin(angle) * r;
+          });
+        }
+      });
+
+      // 再描画
+      restart();
+    }
+
+    // 均等配置を解除して力学レイアウトに戻す
+    function releaseFixedPositions() {
+      nodes.forEach(n => { n.fx = null; n.fy = null; });
+      simulation.alpha(0.3).restart();
+    }
+
+    // ボタンイベント
+    document.getElementById('balanceBtn').addEventListener('click', () => arrangeInCircles());
+    document.getElementById('releaseBtn').addEventListener('click', () => releaseFixedPositions());
+
+    // レスポンシブ
+    window.addEventListener('resize', ()=>{
+      svg.attr('width', getW()).attr('height', getH());
+      simulation.force('center', d3.forceCenter(getW()/2, getH()/2));
+      simulation.alpha(0.3).restart();
+    });
+  </script>
+</body>
+</html>
