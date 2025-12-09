@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Swipe Card App — Debugged</title>
+<style>
+  html,body{height:100%;}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:#111;color:#fff;display:flex;flex-direction:column;align-items:center;}
+  #cardArea{display:flex;width:100vw;height:100vh;gap:0;margin:0;}
+  .card{flex:1;height:100%;border-radius:12px;background:#333;box-shadow:0 8px 20px rgba(0,0,0,.6);overflow:hidden;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .card .card-type{padding:8px 12px;font-size:16px}
+  .type-analysis{background:#ff6b5f}
+  .type-idea{background:#3aa0ff}
+  .type-image{background:#2fb86b}
+  .iframe-wrap{width:100%;height:100%}
+  .swipe-layer{position:absolute;inset:0;z-index:10}
+  #controls{margin-bottom:28px}
+  button{padding:8px 14px;margin:0 6px;border-radius:8px;border:none;cursor:pointer}
+  #log{font-size:12px;color:#bbb;margin-top:8px}
+</style>
+</head>
+<body>
+<div id="cardArea" aria-live="polite"></div>
+<div id="controls">
+  <button id="leftBtn">←</button>
+  <button id="rightBtn">→</button>
+  <button id="toggleIframeInteraction">Toggle iframe interaction</button>
+</div>
+<div id="log"></div>
+
+<script>
+/*
+  Goals of this rewrite (fixes for the reported errors):
+  - Prevent any accidental calls to document.write in the parent page.
+  - Avoid double-generation of cards when a swipe is detected.
+  - Improve pointer handling (use pointer events and per-pointer guards).
+  - Defer setting iframe.src until after insertion to reduce cross-origin timing issues.
+  - Provide an "overlayEnabled" toggle so user can interact with iframe when needed.
+*/
+
+const logEl = document.getElementById('log');
+function log(msg){ logEl.textContent = msg; console.log(msg); }
+
+let globalCount = 0;
+let deck = [
+  {type:'analysis', label:'解析(4)'},
+  {type:'analysis', label:'解析(6)'},
+  {type:'idea', label:'発想(5)'},
+  {type:'image', label:'画像'},
+  {type:'analysis', label:'解析(2)'},
+  {type:'idea', label:'発想(3)'},
+  {type:'idea', label:'発想(1)'}
+];
+let centerIndex = 3; // focus on "画像"
+const cardArea = document.getElementById('cardArea');
+const leftBtn = document.getElementById('leftBtn');
+const rightBtn = document.getElementById('rightBtn');
+const toggleIframeInteraction = document.getElementById('toggleIframeInteraction');
+let overlayEnabled = true;
+
+// pointer guard map to prevent multiple handleSwipe for the same pointer
+const activePointers = new Map();
+
+function getVisibleIndices(){
+  // show center and 3 surrounding (center-1, center, center+1, center+2) clamped
+  const start = Math.max(0, centerIndex - 1);
+  const end = Math.min(deck.length - 1, centerIndex + 2);
+  const out = [];
+  for(let i=start;i<=end;i++) out.push(i);
+  return out;
+}
+
+function createCardElement(cardObj, idx){
+  const el = document.createElement('div');
+  el.className = 'card type-' + cardObj.type;
+
+  // label area
+  const label = document.createElement('div');
+  label.className = 'card-type';
+  label.textContent = cardObj.label || (cardObj.type || '');
+  el.appendChild(label);
+
+  // if idea/analysis we embed an iframe (deferred src assignment)
+  let layerTarget = el; // the element that receives pointer events
+  if((cardObj.type === 'idea' || cardObj.type === 'analysis')){
+    const wrap = document.createElement('div');
+    wrap.className = 'iframe-wrap';
+    wrap.style.flex = '1';
+    wrap.style.width = '100%';
+    wrap.style.height = '100%';
+    // create iframe but do not set src immediately
+    const iframe = document.createElement('iframe');
+    iframe.style.width = '100%';
+    iframe.style.height = '100%';
+    iframe.style.border = 'none';
+    // provide sandbox attributes — allow-scripts and allow-same-origin are needed for the external pages to run; keep them
+    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups');
+
+    // append iframe and then set src after it's in DOM to reduce race conditions
+    wrap.appendChild(iframe);
+    el.appendChild(wrap);
+
+    // overlay to capture swipes (we can disable pointer-events to allow iframe interaction)
+    const overlay = document.createElement('div');
+    overlay.className = 'swipe-layer';
+    overlay.style.pointerEvents = overlayEnabled ? 'auto' : 'none';
+    el.appendChild(overlay);
+    layerTarget = overlay;
+
+    // set src asynchronously after appending to DOM (done by caller when rendering)
+    // store iframe url in object for later assignment
+    // if cardObj already has url, we'll set it after render
+    el._deferredIframe = iframe;
+    el._iframeUrl = cardObj.url || null;
+  }
+
+  return {el, layer: layerTarget};
+}
+
+function render(){
+  // clear activePointers so old pointer captures don't linger
+  activePointers.clear();
+
+  // remove old content
+  cardArea.innerHTML = '';
+
+  const indices = getVisibleIndices();
+
+  indices.forEach(i => {
+    const card = deck[i];
+    const {el, layer} = createCardElement(card, i);
+
+    // set up pointer handlers on layer
+    (function(realIndex){
+      function onPointerDown(e){
+        // only primary button
+        if(e.pointerType === 'mouse' && e.button !== 0) return;
+        // record start position for this pointer id
+        activePointers.set(e.pointerId, {startX: e.clientX, handled:false});
+        // capture pointer so we get pointerup even if it leaves
+        try{ layer.setPointerCapture && layer.setPointerCapture(e.pointerId); }catch(err){}
+      }
+
+      function onPointerUp(e){
+        const rec = activePointers.get(e.pointerId);
+        try{ layer.releasePointerCapture && layer.releasePointerCapture(e.pointerId); }catch(err){}
+        if(!rec) return;
+        if(rec.handled) { activePointers.delete(e.pointerId); return; }
+        const dist = e.clientX - rec.startX;
+        // threshold
+        if(Math.abs(dist) < 40){ activePointers.delete(e.pointerId); return; }
+        rec.handled = true;
+        activePointers.delete(e.pointerId);
+        // perform swipe action
+        handleSwipe(dist, realIndex);
+      }
+
+      layer.addEventListener('pointerdown', onPointerDown);
+      layer.addEventListener('pointerup', onPointerUp);
+      layer.addEventListener('pointercancel', () => { /* ignore */ });
+
+    })(i);
+
+    cardArea.appendChild(el);
+
+    // if element contains a deferred iframe, set its src now (after being appended)
+    if(el._deferredIframe && el._iframeUrl){
+      // set src in a timeout to avoid potential immediate document.write timing issues inside iframe
+      setTimeout(() => {
+        try{
+          el._deferredIframe.src = el._iframeUrl;
+        }catch(err){
+          console.error('iframe set src error', err);
+        }
+      }, 50);
+    }
+  });
+}
+
+function handleSwipe(dist, realIndex){
+  // prevent invalid indices
+  if(realIndex < 0 || realIndex >= deck.length) return;
+  const dir = dist > 0 ? 'right' : 'left';
+  log(`Swipe ${dir} on index ${realIndex} (${deck[realIndex].label || deck[realIndex].type})`);
+
+  const newType = dist > 0 ? 'idea' : 'analysis';
+  globalCount++;
+  const newCard = {
+    type: newType,
+    label: newType === 'idea' ? `発想(${globalCount})` : `解析(${globalCount})`,
+    url: newType === 'idea'
+      ? 'https://hachi399.github.io/Dr.Cube/prototype7/broadcast3.html'
+      : 'https://hachi399.github.io/Dr.Cube/public/index.html',
+    num: globalCount
+  };
+
+  deck.splice(realIndex + 1, 0, newCard);
+  centerIndex = realIndex + 1; // focus the newly created card
+  render();
+}
+
+// control buttons
+leftBtn.addEventListener('click', ()=>{ if(centerIndex>0) centerIndex--; render(); });
+rightBtn.addEventListener('click', ()=>{ if(centerIndex < deck.length-1) centerIndex++; render(); });
+
+toggleIframeInteraction.addEventListener('click', ()=>{
+  overlayEnabled = !overlayEnabled;
+  render();
+});
+
+// catch uncaught errors in parent to avoid confusing document.write stack traces
+window.addEventListener('error', (ev) => {
+  console.warn('Parent window error caught:', ev.message);
+  // avoid letting some errors halt execution
+});
+
+// initial render
+render();
+
+</script>
+</body>
+</html>
