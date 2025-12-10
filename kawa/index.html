@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>画像拡大ツール</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <h2>画像拡大ツール</h2>
+
+    <input type="file" id="file-input" />
+
+    <div id="container">
+      <div id="left">
+        <h3>アップロード画像</h3>
+        <div id="image-wrapper">
+          <img id="uploaded-image" alt="" />
+          <canvas id="selection-canvas"></canvas>
+        </div>
+      </div>
+
+      <div id="right">
+        <h3>切り出しプレビュー</h3>
+        <canvas id="crop-preview"></canvas>
+
+        <h3>検索結果</h3>
+        <div id="search-results"></div>
+      </div>
+    </div>
+
+    <script src="main.js"></script>
+  </body>
+</html>
