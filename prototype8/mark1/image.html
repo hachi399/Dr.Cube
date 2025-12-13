@@ -1,10 +1,69 @@
 <!DOCTYPE html>
-<html>
-<body style="font-family:sans-serif;padding:20px">
-<h2>Image Analyzer</h2>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Image → Word Summary</title>
+  <style>
+    body { margin: 0; padding: 20px; font-family: sans-serif; background: #111; color: #fff; }
+    button { padding: 10px 20px; margin-top: 10px; border: none; border-radius: 6px; cursor: pointer; }
+    #preview { margin-top: 20px; max-width: 300px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <h2>Image → Summary Word</h2>
 
-<input type="file" id="img" />
-<pre id="out"></pre>
+  <input type="file" id="fileInput" accept="image/*" />
+  <button id="sendBtn">解析</button>
+
+  <img id="preview" />
+  <div id="output"></div>
+  <pre id="out"></pre>
+
+<script>
+const API_URL = "https://dr-cube-1.onrender.com/chat";
+
+document.getElementById("fileInput").addEventListener("change", handleFile);
+document.getElementById("sendBtn").addEventListener("click", processImage);
+
+function handleFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = ev => {
+    document.getElementById("preview").src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function processImage() {
+  const img = document.getElementById("preview").src;
+  if (!img) return;
+
+  const prompt = "以下の画像から読み取れる単語のみ（複数）を出力してください。画像: " + img;
+  const payload = { prompt, image: img };
+
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) throw new Error("API Error: " + res.status);
+
+    const data = await res.json();
+    const word = data?.reply?.trim() || "(no result)";
+
+    document.getElementById("output").innerText = "結果: " + word;
+
+  } catch (err) {
+    console.error(err);
+    document.getElementById("output").innerText = "エラー: " + err.message;
+  }
+}
+</script>
 
 <script>
 const out = document.getElementById('out');
@@ -13,7 +72,7 @@ document.getElementById('img').addEventListener('change', e=>{
   const file = e.target.files[0];
   if(!file) return;
 
-  // 🔹 仮の「画像解析結果」
+  // 🔹 仮の「画像解析結果」ここを後ほどBASE64から読み取った単語と入れ替え
   const result = {
     name: file.name,
     size: file.size,
