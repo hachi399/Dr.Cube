@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<body style="font-family:sans-serif;padding:20px">
+<h2>Image Analyzer</h2>
+
+<input type="file" id="img" />
+<pre id="out"></pre>
+
+<script>
+const out = document.getElementById('out');
+
+document.getElementById('img').addEventListener('change', e=>{
+  const file = e.target.files[0];
+  if(!file) return;
+
+  // 🔹 仮の「画像解析結果」
+  const result = {
+    name: file.name,
+    size: file.size,
+    analyzedAt: new Date().toISOString(),
+    tags: ['sample','image','demo']
+  };
+
+  out.textContent = JSON.stringify(result, null, 2);
+
+  // 🔹 親ページへ送信
+  parent.postMessage({
+    type: 'IMAGE_RESULT',
+    payload: result
+  }, location.origin);
+});
+</script>
+</body>
+</html>
