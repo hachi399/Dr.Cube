@@ -56,7 +56,7 @@ async function processImage() {
     const data = await res.json();
     const word = data?.reply?.trim() || "(no result)";
 
-    document.getElementById("output").innerText = "結果: " + word;
+    document.getElementById("output").innerText = "結果（デバック１）: " + word;
 //--------------------------------------編集済み
     const out = document.getElementById('out');
     out.textContent = JSON.stringify(word, null, 2);
