@@ -64,7 +64,7 @@ async function processImage() {
   // 🔹 親ページへ送信
   parent.postMessage({
     type: 'IMAGE_RESULT',
-    payload: result
+    payload: word
   }, location.origin);
 //------------------------------------
 
