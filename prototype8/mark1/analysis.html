@@ -1,105 +1,22 @@
 <!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Image → Word Summary</title>
-  <style>
-    body { margin: 0; padding: 20px; font-family: sans-serif; background: #111; color: #fff; }
-    button { padding: 10px 20px; margin-top: 10px; border: none; border-radius: 6px; cursor: pointer; }
-    #preview { margin-top: 20px; max-width: 300px; border-radius: 8px; }
-    .words { margin-top: 10px; padding: 10px; background: #222; border-radius: 6px; }
-  </style>
-</head>
-<body>
-  <h2>Image → Summary Word</h2>
-
-  <input type="file" id="fileInput" accept="image/*" />
-  <button id="sendBtn">解析（デバック２）</button>
-
-  <img id="preview" />
-  <div id="output"></div>
-
-  <h3>抽出された単語</h3>
-  <div id="wordList" class="words"></div>
+<html>
+<body style="font-family:sans-serif;padding:20px">
+<h2>Analysis Viewer</h2>
+<pre id="log">waiting...</pre>
 
 <script>
-const API_URL = "https://dr-cube-1.onrender.com/chat";
+const log = document.getElementById('log');
 
-document.getElementById("fileInput").addEventListener("change", handleFile);
-document.getElementById("sendBtn").addEventListener("click", processImage);
+window.addEventListener('message', e=>{
+  if(e.origin !== location.origin) return;
+  const { type, payload } = e.data || {};
 
-function handleFile(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = ev => {
-    document.getElementById("preview").src = ev.target.result;
-  };
-  reader.readAsDataURL(file);
-}
-
-async function processImage() {
-  const img = document.getElementById("preview").src;
-  if (!img) return;
-
-  const prompt = "以下の画像から読み取れる単語のみ（複数）を出力してください。画像: " + img;
-  const payload = { prompt, image: img };
-
-  try {
-    const res = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-
-    if (!res.ok) throw new Error("API Error: " + res.status);
-
-    const data = await res.json();
-    const text = data?.reply?.trim() || "(no result)";
-
-    document.getElementById("output").innerText = "結果: " + text;
-
-    // ✅ 単語抽出して表示
-    const words = extractWords(text);
-    displayWords(words);
-
-  } catch (err) {
-    console.error(err);
-    document.getElementById("output").innerText = "エラー: " + err.message;
+  if(type === 'DB_UPDATE'){
+    log.textContent =
+      '【新しい解析結果】\\n' +
+      JSON.stringify(payload, null, 2);
   }
-}
-
-/* ✅ 単語抽出ロジック */
-function extractWords(text) {
-  // 日本語の句読点・記号を除去
-  text = text.replace(/[、。・\n\r]/g, " ");
-
-  // 英語の記号も除去
-  text = text.replace(/[.,!?]/g, " ");
-
-  // スペースで分割
-  let parts = text.split(/\s+/).filter(Boolean);
-
-  // 重複削除
-  parts = [...new Set(parts)];
-
-  return parts;
-}
-
-/* ✅ HTML に単語を表示 */
-function displayWords(words) {
-  const list = document.getElementById("wordList");
-  list.innerHTML = "";
-
-  if (words.length === 0) {
-    list.innerText = "(単語なし)";
-    return;
-  }
-
-  list.innerHTML = words.map(w => `<span>${w}</span>`).join("<br>");
-}
+});
 </script>
 </body>
 </html>
