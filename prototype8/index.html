@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Swipe Card App — Local File Version</title>
+<style>
+  html,body{height:100%;}
+  body{margin:0;font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;background:#111;color:#fff;
+        display:flex;flex-direction:column;align-items:center;}
+  #cardArea{display:flex;width:100vw;height:100vh;gap:0;margin:0;}
+  .card{flex:1;height:100%;border-radius:12px;background:#333;
+        box-shadow:0 8px 20px rgba(0,0,0,.6);overflow:hidden;
+        position:relative;display:flex;flex-direction:column;
+        align-items:center;justify-content:center}
+  .card .card-type{padding:8px 12px;font-size:16px}
+  .type-analysis{background:#ff6b5f}
+  .type-idea{background:#3aa0ff}
+  .type-image{background:#2fb86b}
+  .iframe-wrap{width:100%;height:100%}
+  .swipe-layer{position:absolute;inset:0;z-index:10}
+  #controls{margin-bottom:28px}
+  button{padding:8px 14px;margin:0 6px;border-radius:8px;border:none;cursor:pointer}
+  #log{font-size:12px;color:#bbb;margin-top:8px}
+</style>
+</head>
+<body>
+
+<div id="cardArea" aria-live="polite"></div>
+
+<div id="controls">
+  <button id="leftBtn">←</button>
+  <button id="rightBtn">→</button>
+  <button id="toggleIframeInteraction">Toggle iframe Interaction</button>
+</div>
+
+<div id="log"></div>
+
+<script>
+/* ---------------------------------------------------
+    ★ 各カードが読み込むローカルHTMLファイル
+--------------------------------------------------- */
+const PAGE_URL = {
+  idea:      "idea.html",
+  analysis:  "analysis.html",
+  image:     "image.html"
+};
+
+// iframe ⇄ 親ページ通信用
+function sendToIframe(iframe, type, payload){
+  if(!iframe || !iframe.contentWindow) return;
+  iframe.contentWindow.postMessage({ type, payload }, location.origin);
+}
+
+// ================= IndexedDB =================
+const DB_NAME = 'cardDB';
+const STORE = 'analysis';
+let db;
+
+function openDB(){
+  return new Promise((resolve, reject)=>{
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains(STORE)){
+        db.createObjectStore(STORE, { keyPath:'id', autoIncrement:true });
+      }
+    };
+    req.onsuccess = e => { db = e.target.result; resolve(db); };
+    req.onerror = e => reject(e);
+  });
+}
+
+function saveResult(data){
+  const tx = db.transaction(STORE, 'readwrite');
+  tx.objectStore(STORE).add({ time:Date.now(), data });
+  tx.oncomplete = ()=>{
+    console.log('IndexedDB saved:', data);
+    broadcastUpdate(data);
+  };
+}
+
+function broadcastUpdate(data){
+  document.querySelectorAll('iframe').forEach(ifr=>{
+    if(ifr.dataset.cardType === 'analysis'){
+      ifr.contentWindow.postMessage({ type:'DB_UPDATE', payload:data }, location.origin);
+    }
+  });
+}
+
+window.addEventListener('message', async (event)=>{
+  if(event.origin !== location.origin) return;
+  const { type, payload } = event.data || {};
+
+  if(type === 'IMAGE_RESULT'){
+    saveResult(payload);
+  }
+});
+
+openDB();
+
+const logEl = document.getElementById("log");
+function log(msg){ logEl.textContent = msg; console.log(msg); }
+
+let globalCount = 0;
+
+let deck = [
+  {type:'analysis', label:'解析(4)'},
+  {type:'analysis', label:'解析(6)'},
+  {type:'idea', label:'発想(5)'},
+  {type:'image', label:'画像'},
+  {type:'analysis', label:'解析(2)'},
+  {type:'idea', label:'発想(3)'},
+  {type:'idea', label:'発想(1)'}
+];
+let centerIndex = 3;
+
+const cardArea = document.getElementById("cardArea");
+const leftBtn = document.getElementById("leftBtn");
+const rightBtn = document.getElementById("rightBtn");
+const toggleIframeInteraction = document.getElementById("toggleIframeInteraction");
+
+let overlayEnabled = true;
+const activePointers = new Map();
+
+function getVisibleIndices(){
+  const start = Math.max(0, centerIndex - 1);
+  const end   = Math.min(deck.length - 1, centerIndex + 2);
+  const out = [];
+  for(let i=start; i<=end; i++) out.push(i);
+  return out;
+}
+
+function createCardElement(cardObj, idx){
+  const el = document.createElement("div");
+  el.className = "card type-" + cardObj.type;
+
+  const label = document.createElement("div");
+  label.className = "card-type";
+  label.textContent = cardObj.label || cardObj.type;
+  el.appendChild(label);
+
+  let layerTarget = el;
+
+  if(cardObj.type === "idea" || cardObj.type === "analysis" || cardObj.type === "image"){
+    const wrap = document.createElement("div");
+    wrap.className = "iframe-wrap";
+    wrap.style.flex = "1";
+
+    const iframe = document.createElement("iframe");
+    iframe.dataset.cardType = cardObj.type;
+    iframe.style.width = "100%";
+    iframe.style.height = "100%";
+    iframe.style.border = "none";
+    iframe.removeAttribute("sandbox");
+
+    wrap.appendChild(iframe);
+    el.appendChild(wrap);
+
+    const overlay = document.createElement("div");
+    overlay.className = "swipe-layer";
+    overlay.style.pointerEvents = overlayEnabled ? "auto" : "none";
+    el.appendChild(overlay);
+
+    layerTarget = overlay;
+
+    const localUrl = PAGE_URL[cardObj.type];
+    setTimeout(()=>{
+      iframe.src = localUrl;
+      // 親 → iframe 初期メッセージ
+      iframe.addEventListener('load', ()=>{
+        sendToIframe(iframe, 'INIT', { cardType: cardObj.type });
+      });
+    }, 10);(()=>{ iframe.src = localUrl; }, 10);
+  }
+
+  return {el, layer:layerTarget};
+}
+
+function render(){
+  activePointers.clear();
+  cardArea.innerHTML = "";
+
+  const indices = getVisibleIndices();
+
+  indices.forEach(i=>{
+    const card = deck[i];
+    const {el, layer} = createCardElement(card, i);
+
+    (function(realIndex){
+      function onPointerDown(e){
+        if(e.pointerType === "mouse" && e.button !== 0) return;
+        activePointers.set(e.pointerId, {startX:e.clientX, handled:false});
+        try{ layer.setPointerCapture(e.pointerId);}catch{}
+      }
+      function onPointerUp(e){
+        const rec = activePointers.get(e.pointerId);
+        try{ layer.releasePointerCapture(e.pointerId);}catch{}
+        if(!rec) return;
+        if(rec.handled){ activePointers.delete(e.pointerId); return; }
+
+        const dist = e.clientX - rec.startX;
+        if(Math.abs(dist) < 40){ activePointers.delete(e.pointerId); return; }
+
+        rec.handled = true;
+        activePointers.delete(e.pointerId);
+
+        handleSwipe(dist, realIndex);
+      }
+      layer.addEventListener("pointerdown", onPointerDown);
+      layer.addEventListener("pointerup", onPointerUp);
+    })(i);
+
+    cardArea.appendChild(el);
+  });
+}
+
+function handleSwipe(dist, index){
+  const newType = dist > 0 ? "idea" : "analysis";
+  globalCount++;
+
+  const newCard = {
+    type: newType,
+    label: newType === "idea" ? `発想(${globalCount})` : `解析(${globalCount})`
+  };
+
+  deck.splice(index + 1, 0, newCard);
+  centerIndex = index + 1;
+  render();
+}
+
+leftBtn.addEventListener("click", ()=>{
+  if(centerIndex > 0) centerIndex--;
+  render();
+});
+rightBtn.addEventListener("click", ()=>{
+  if(centerIndex < deck.length-1) centerIndex++;
+  render();
+});
+
+toggleIframeInteraction.addEventListener("click", ()=>{
+  overlayEnabled = !overlayEnabled;
+  render();
+});
+
+render();
+
+</script>
+</body>
+</html>
