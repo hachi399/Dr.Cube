@@ -1,0 +1,120 @@
+```html
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>文章 → 単語抽出（修正版）</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!-- kuromoji.js -->
+<script src="https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dist/kuromoji.js"></script>
+
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    background: #f4f6f8;
+    margin: 0;
+    padding: 20px;
+  }
+  textarea {
+    width: 100%;
+    height: 150px;
+    font-size: 16px;
+    padding: 10px;
+  }
+  button {
+    margin-top: 10px;
+    padding: 10px 20px;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  #status {
+    margin-top: 10px;
+    color: #555;
+  }
+  #result {
+    margin-top: 20px;
+    background: #fff;
+    padding: 15px;
+    border-radius: 6px;
+    line-height: 1.8;
+  }
+  .word {
+    display: inline-block;
+    background: #e3f2fd;
+    margin: 4px;
+    padding: 4px 8px;
+    border-radius: 4px;
+  }
+</style>
+</head>
+
+<body>
+
+<h2>文章から単語を抽出</h2>
+
+<textarea id="input" placeholder="ここに文章を入力してください"></textarea>
+<br>
+<button id="btn" onclick="analyze()" disabled>単語を抽出</button>
+<p id="status">辞書を読み込み中...</p>
+
+<div id="result"></div>
+
+<script>
+let tokenizer = null;
+
+// 辞書の読み込み（非同期）
+kuromoji.builder({
+  dicPath: "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/"
+}).build(function (err, _tokenizer) {
+  if (err) {
+    document.getElementById("status").textContent = "辞書の読み込みに失敗しました";
+    console.error(err);
+    return;
+  }
+  tokenizer = _tokenizer;
+  document.getElementById("status").textContent = "準備完了";
+  document.getElementById("btn").disabled = false;
+});
+
+// 単語抽出
+function analyze() {
+  if (!tokenizer) {
+    alert("まだ準備中です。少し待ってください。");
+    return;
+  }
+
+  const text = document.getElementById("input").value;
+  const tokens = tokenizer.tokenize(text);
+
+  // 抜き出したい品詞
+  const allow = ["名詞", "動詞", "形容詞"];
+
+  const words = tokens
+    .filter(t => allow.includes(t.pos))
+    .map(t => t.basic_form !== "*" ? t.basic_form : t.surface_form);
+
+  const resultDiv = document.getElementById("result");
+  resultDiv.innerHTML = "";
+
+  if (words.length === 0) {
+    resultDiv.textContent = "抽出された単語がありません";
+    return;
+  }
+
+  words.forEach(w => {
+    const span = document.createElement("span");
+    span.className = "word";
+    span.textContent = w;
+    resultDiv.appendChild(span);
+  });
+}
+</script>
+
+</body>
+</html>
+```
