@@ -18,7 +18,7 @@
 
   <img id="preview" />
   <div id="output"></div>
-  <pre id="out"></pre>
+  <pre id="out"></pre> //編集済み
 
 <script>
 const API_URL = "https://dr-cube-1.onrender.com/chat";
@@ -57,6 +57,16 @@ async function processImage() {
     const word = data?.reply?.trim() || "(no result)";
 
     document.getElementById("output").innerText = "結果: " + word;
+//--------------------------------------編集済み
+    const out = document.getElementById('out');
+    out.textContent = JSON.stringify(word, null, 2);
+
+  // 🔹 親ページへ送信
+  parent.postMessage({
+    type: 'IMAGE_RESULT',
+    payload: result
+  }, location.origin);
+//------------------------------------
 
   } catch (err) {
     console.error(err);
@@ -65,29 +75,6 @@ async function processImage() {
 }
 </script>
 
-<script>
-const out = document.getElementById('out');
 
-document.getElementById('img').addEventListener('change', e=>{
-  const file = e.target.files[0];
-  if(!file) return;
-
-  // 🔹 仮の「画像解析結果」ここを後ほどBASE64から読み取った単語と入れ替え
-  const result = {
-    name: file.name,
-    size: file.size,
-    analyzedAt: new Date().toISOString(),
-    tags: ['sample','image','demo']
-  };
-
-  out.textContent = JSON.stringify(result, null, 2);
-
-  // 🔹 親ページへ送信
-  parent.postMessage({
-    type: 'IMAGE_RESULT',
-    payload: result
-  }, location.origin);
-});
-</script>
 </body>
 </html>
