@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>熟語抽出デモ</title>
+</head>
+<body>
+  <h1>文章から熟語抽出</h1>
+  <textarea id="inputText" rows="6" cols="60" placeholder="ここに文章を入力してください"></textarea><br>
+  <button id="extractBtn">熟語を抽出</button>
+
+  <h2>抽出結果</h2>
+  <pre id="result"></pre>
+
+  <script>
+  const API_URL = "https://api.openai.com/v1/chat/completions";
+  const API_KEY = "YOUR_API_KEY_HERE";
+
+  document.getElementById("extractBtn").addEventListener("click", async () => {
+    const text = document.getElementById("inputText").value;
+    const resultEl = document.getElementById("result");
+    resultEl.textContent = "処理中...";
+
+    const messages = [
+      { role: "system", content: "あなたは日本語の言語処理に詳しいアシスタントです。" },
+      { role: "user", content: `以下の文章から熟語（2字以上の漢字のまとまり）だけを抽出し、JSON配列で返してください。\n\n文章: ${text}` }
+    ];
+
+    try {
+      const response = await fetch(API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${API_KEY}`
+        },
+        body: JSON.stringify({
+          model: "gpt-4.1-mini",
+          messages,
+          temperature: 0
+        })
+      });
+
+      const data = await response.json();
+
+      // ここでレスポンス全体を表示して確認
+      console.log("API response:", data);
+
+      if (!data.choices || data.choices.length === 0) {
+        resultEl.textContent = "APIエラー（choices が空）:\n" + JSON.stringify(data, null, 2);
+        return;
+      }
+
+      const content = data.choices[0].message?.content ?? "";
+      resultEl.textContent = content;
+    } catch (error) {
+      resultEl.textContent = "エラーが発生しました: " + error;
+    }
+  });
+</script>
+</body>
+</html>
