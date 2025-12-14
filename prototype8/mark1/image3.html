@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Image → 熟語カード生成</title>
+  <style>
+    body { margin: 0; padding: 20px; font-family: sans-serif; background: #111; color: #fff; }
+    button { padding: 10px 20px; margin-top: 10px; border: none; border-radius: 6px; cursor: pointer; }
+    #preview { margin-top: 20px; max-width: 300px; border-radius: 8px; }
+    .card { background:#222; padding:10px; margin:8px 0; border-radius:6px; }
+  </style>
+</head>
+<body>
+<h2>Image → 熟語カード生成</h2>
+<input type="file" id="fileInput" accept="image/*" />
+<button id="sendBtn">解析してカード生成</button>
+<img id="preview" />
+<div id="cards"></div>
+
+<script>
+const API_URL = "https://dr-cube-1.onrender.com/chat";
+const DB_NAME = "jukugoDB";
+const STORE_NAME = "cards";
+
+// --- IndexedDB ---
+let db;
+const openDB = () => new Promise((resolve, reject) => {
+  const req = indexedDB.open(DB_NAME, 1);
+  req.onupgradeneeded = e => {
+    db = e.target.result;
+    db.createObjectStore(STORE_NAME, { keyPath: "id", autoIncrement: true });
+  };
+  req.onsuccess = e => { db = e.target.result; resolve(); };
+  req.onerror = () => reject();
+});
+
+const saveCard = card => {
+  const tx = db.transaction(STORE_NAME, "readwrite");
+  tx.objectStore(STORE_NAME).add(card);
+};
+
+// --- File ---
+document.getElementById("fileInput").addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => document.getElementById("preview").src = ev.target.result;
+  reader.readAsDataURL(file);
+});
+
+// --- Main ---
+document.getElementById("sendBtn").addEventListener("click", async () => {
+  const img = document.getElementById("preview").src;
+  if (!img) return alert("画像を選択してください");
+
+  await openDB();
+
+  const payload = {
+    image: img,
+    prompt: `この画像に含まれる文章を読み取り、そこから熟語（2字以上の漢字のまとまり）を抽出してください。\n出力は以下のJSON形式のみで返してください。\n[{"word":"熟語","meaning":"簡単な意味"}]`
+  };
+
+  const res = await fetch(API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  if (!res.ok) return alert("APIエラー");
+
+  const data = await res.json();
+  let cards;
+  try {
+    cards = JSON.parse(data.reply);
+  } catch {
+    return alert("JSON解析失敗");
+  }
+
+  const container = document.getElementById("cards");
+  container.innerHTML = "";
+
+  cards.forEach(c => {
+    const card = {
+      word: c.word,
+      meaning: c.meaning,
+      created: Date.now()
+    };
+    saveCard(card);
+
+    const div = document.createElement("div");
+    div.className = "card";
+    div.innerHTML = `<strong>${c.word}</strong><br>${c.meaning}`;
+    container.appendChild(div);
+
+    parent.postMessage({ type: "CARD_CREATED", payload: card }, location.origin);
+  });
+});
+</script>
+</body>
+</html>
