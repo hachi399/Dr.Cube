@@ -255,6 +255,24 @@
         }
       });
     })();
+    async function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open("jukugoDB", 1);
+    req.onupgradeneeded = (e) => {
+      db = e.target.result;
+      if (!db.objectStoreNames.contains("texts")) {
+        db.createObjectStore("texts", { keyPath: "id", autoIncrement: true });
+      }
+    };
+    req.onsuccess = (e) => { db = e.target.result; resolve(db); };
+    req.onerror = (e) => reject(e);
+  });
+}
+
+(async function init() {
+  await openDB();   // ← 必ず最初に呼ぶ
+  await renderList();
+})();
   </script>
 </body>
 </html>
