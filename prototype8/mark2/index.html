@@ -82,7 +82,7 @@ function saveResult(data){
 
 function broadcastUpdate(data){
   document.querySelectorAll('iframe').forEach(ifr=>{
-    if(ifr.dataset.cardType === 'analysis'){
+    if(ifr.dataset.cardType === 'analysis' || ifr.dataset.cardType === 'idea'){
       ifr.contentWindow.postMessage({ type:'DB_UPDATE', payload:data }, location.origin);
     }
   });
