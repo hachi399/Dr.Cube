@@ -1,14 +1,4 @@
-<!DOCTYPE html>
-<html>
-<body style="font-family:sans-serif;padding:20px">
-<h2>Idea Viewer</h2>
-<pre id="log">waiting...</pre>
 
-<script>
-
-</script>
-</body>
-</html>
 <!doctype html>
 <html lang="ja">
 <head>
@@ -28,9 +18,9 @@
 </head>
 <body>
   <div class="controls">
-    <input id="seedInput" type="text" placeholder="親ノード名（例：音楽）" />
+    
     <button id="addSeedBtn">生成（親→子6→孫3×6）</button>
-    <div class="notice">※孫ノード以上は生成しません</div>
+ 
   </div>
 
   <svg id="graph"></svg>
@@ -54,7 +44,7 @@ window.addEventListener('message', e=>{
 });
     //-----------親ページからの送信内容ここまで
 
-    
+
     // 状態
     let nodes = [];
     let links = [];
