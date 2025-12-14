@@ -3,81 +3,81 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Swipe Card App — Fixed iframe state</title>
+<title>Swipe Card App — Fixed iframe State</title>
 <style>
-html,body{height:100%;}
-body{
-  margin:0;
-  background:#111;
-  color:#fff;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-}
-#cardArea{
-  display:flex;
-  width:100vw;
-  height:100vh;
-}
-.card{
-  flex:1;
-  background:#333;
-  border-radius:12px;
-  margin:2px;
-  overflow:hidden;
-  position:relative;
-  display:flex;
-  flex-direction:column;
-}
-.card-type{padding:8px}
-.type-analysis{background:#ff6b5f}
-.type-idea{background:#3aa0ff}
-.type-image{background:#2fb86b}
-.iframe-wrap{flex:1}
-.swipe-layer{position:absolute;inset:0;z-index:10}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+    background:#111;color:#fff;
+    display:flex;flex-direction:column;align-items:center;
+  }
+  #cardArea{display:flex;width:100vw;height:100vh;}
+  .card{
+    flex:1;height:100%;border-radius:12px;background:#333;
+    box-shadow:0 8px 20px rgba(0,0,0,.6);
+    overflow:hidden;position:relative;
+    display:flex;flex-direction:column;
+  }
+  .card-type{padding:8px 12px}
+  .iframe-wrap{flex:1}
+  iframe{width:100%;height:100%;border:none}
+  .swipe-layer{position:absolute;inset:0;z-index:10}
+  #controls{margin:12px}
 </style>
 </head>
 <body>
 
 <div id="cardArea"></div>
 
+<div id="controls">
+  <button id="leftBtn">←</button>
+  <button id="rightBtn">→</button>
+  <button id="toggleIframeInteraction">Toggle iframe Interaction</button>
+</div>
+
 <script>
+/* ================= iframe URL ================= */
 const PAGE_URL = {
   idea: "idea.html",
   analysis: "analysis.html",
   image: "image.html"
 };
 
-// --------------------
-// カード管理
-// --------------------
-let uid = 0;
-function createCard(type,label){
-  return { id: ++uid, type, label };
-}
+/* ================= 状態 ================= */
+let overlayEnabled = true;
+let globalCount = 0;
+let centerIndex = 3;
 
+/* ================= カード定義 ================= */
 let deck = [
-  createCard('analysis','解析(4)'),
-  createCard('analysis','解析(6)'),
-  createCard('idea','発想(5)'),
-  createCard('image','画像'),
-  createCard('analysis','解析(2)'),
-  createCard('idea','発想(3)'),
-  createCard('idea','発想(1)')
+  {id:crypto.randomUUID(), type:'analysis', label:'解析(4)'},
+  {id:crypto.randomUUID(), type:'analysis', label:'解析(6)'},
+  {id:crypto.randomUUID(), type:'idea',     label:'発想(5)'},
+  {id:crypto.randomUUID(), type:'image',    label:'画像'},
+  {id:crypto.randomUUID(), type:'analysis', label:'解析(2)'},
+  {id:crypto.randomUUID(), type:'idea',     label:'発想(3)'},
+  {id:crypto.randomUUID(), type:'idea',     label:'発想(1)'}
 ];
 
-let centerIndex = 3;
-const cardArea = document.getElementById("cardArea");
-
-// DOM 永続マップ
+/* ================= DOM 永続キャッシュ ================= */
 const cardDomMap = new Map();
 
-// --------------------
-// カードDOM生成（1回だけ）
-// --------------------
-function createCardDOM(card){
+/* ================= util ================= */
+function getVisibleIndices(){
+  return [
+    Math.max(0, centerIndex - 1),
+    centerIndex,
+    Math.min(deck.length - 1, centerIndex + 1)
+  ];
+}
+
+/* ================= カード生成（1回だけ） ================= */
+function createCard(card){
+  if(cardDomMap.has(card.id)) return cardDomMap.get(card.id);
+
   const el = document.createElement("div");
-  el.className = "card type-" + card.type;
+  el.className = "card";
 
   const label = document.createElement("div");
   label.className = "card-type";
@@ -88,10 +88,7 @@ function createCardDOM(card){
   wrap.className = "iframe-wrap";
 
   const iframe = document.createElement("iframe");
-  iframe.style.width = "100%";
-  iframe.style.height = "100%";
-  iframe.style.border = "none";
-  iframe.src = PAGE_URL[card.type]; // ★一度だけ
+  iframe.src = PAGE_URL[card.type];
 
   wrap.appendChild(iframe);
   el.appendChild(wrap);
@@ -100,48 +97,63 @@ function createCardDOM(card){
   overlay.className = "swipe-layer";
   el.appendChild(overlay);
 
-  // swipe
   overlay.addEventListener("pointerdown", e=>{
-    overlay._startX = e.clientX;
+    overlay.setPointerCapture(e.pointerId);
+    overlay.startX = e.clientX;
   });
+
   overlay.addEventListener("pointerup", e=>{
-    const dx = e.clientX - overlay._startX;
-    if(Math.abs(dx) < 40) return;
-
-    const newType = dx > 0 ? "idea" : "analysis";
-    const newCard = createCard(
-      newType,
-      newType === "idea" ? "発想" : "解析"
-    );
-    const index = deck.findIndex(c=>c.id===card.id);
-    deck.splice(index+1,0,newCard);
-    centerIndex = index+1;
-    render();
+    const dx = e.clientX - overlay.startX;
+    if(Math.abs(dx) > 40){
+      handleSwipe(dx, deck.indexOf(card));
+    }
   });
 
+  cardDomMap.set(card.id, el);
   return el;
 }
 
-// --------------------
-// 描画（DOM再利用）
-// --------------------
+/* ================= 描画 ================= */
 function render(){
   cardArea.innerHTML = "";
 
-  const start = Math.max(0, centerIndex-1);
-  const end   = Math.min(deck.length-1, centerIndex+2);
-
-  for(let i=start;i<=end;i++){
+  getVisibleIndices().forEach(i=>{
     const card = deck[i];
-    if(!cardDomMap.has(card.id)){
-      cardDomMap.set(card.id, createCardDOM(card));
-    }
-    cardArea.appendChild(cardDomMap.get(card.id));
-  }
+    const el = createCard(card);
+    el.querySelector(".swipe-layer").style.pointerEvents =
+      overlayEnabled ? "auto" : "none";
+    cardArea.appendChild(el);
+  });
 }
+
+/* ================= スワイプ ================= */
+function handleSwipe(dist, index){
+  const type = dist > 0 ? "idea" : "analysis";
+  globalCount++;
+
+  const card = {
+    id: crypto.randomUUID(),
+    type,
+    label: type === "idea"
+      ? `発想(${globalCount})`
+      : `解析(${globalCount})`
+  };
+
+  deck.splice(index + 1, 0, card);
+  centerIndex = index + 1;
+  render();
+}
+
+/* ================= 操作 ================= */
+leftBtn.onclick = ()=>{ if(centerIndex>0) centerIndex--; render(); };
+rightBtn.onclick = ()=>{ if(centerIndex<deck.length-1) centerIndex++; render(); };
+
+toggleIframeInteraction.onclick = ()=>{
+  overlayEnabled = !overlayEnabled;
+  render();
+};
 
 render();
 </script>
 </body>
 </html>
-      
