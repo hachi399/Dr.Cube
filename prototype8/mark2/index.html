@@ -226,21 +226,21 @@ function handleSwipe(dist, index){
 
   deck.splice(index + 1, 0, newCard);
   centerIndex = index + 1;
-  render();
+  //render();
 }
 
 leftBtn.addEventListener("click", ()=>{
   if(centerIndex > 0) centerIndex--;
-  render();
+  //render();
 });
 rightBtn.addEventListener("click", ()=>{
   if(centerIndex < deck.length-1) centerIndex++;
-  render();
+  //render();
 });
 
 toggleIframeInteraction.addEventListener("click", ()=>{
   overlayEnabled = !overlayEnabled;
-  render();
+  //render();
 });
 
 render();
