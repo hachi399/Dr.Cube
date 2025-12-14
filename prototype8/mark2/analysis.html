@@ -17,6 +17,20 @@ window.addEventListener('message', e=>{
       JSON.stringify(payload, null, 2);
   }
 });
+const API_URL = "https://dr-cube-1.onrender.com/chat";
+const prompt1 = "以下の解析結果からさらに解析してください"+ {textContent};
+const payload = {
+  prompt: prompt1,
+
+};
+fetch(API_URL, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(payload)
+});
+const data = await res.json();
+const result = data?.reply?.trim();
+
 </script>
 </body>
 </html>
