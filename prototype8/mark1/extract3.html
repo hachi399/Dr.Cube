@@ -162,6 +162,7 @@
           req.onerror = (e) => reject(e);
         });
         if (!record) throw new Error("レコードが見つかりません");
+        console.log(record.text);
 
         // プロンプトを組み立てる（熟語抽出用）
         const prompt = `以下の文章から熟語（2字以上の漢字のまとまり）だけを抽出し、JSON配列で返してください。\n\n文章: ${record.text}`;
