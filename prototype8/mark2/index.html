@@ -3,25 +3,91 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Swipe Card App — Local File Version</title>
+<title>Swipe Card App — No DOM Destroy</title>
 <style>
   html,body{height:100%;}
-  body{margin:0;font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;background:#111;color:#fff;
-        display:flex;flex-direction:column;align-items:center;}
-  #cardArea{display:flex;width:100vw;height:100vh;gap:0;margin:0;}
-  .card{flex:1;height:100%;border-radius:12px;background:#333;
-        box-shadow:0 8px 20px rgba(0,0,0,.6);overflow:hidden;
-        position:relative;display:flex;flex-direction:column;
-        align-items:center;justify-content:center}
-  .card .card-type{padding:8px 12px;font-size:16px}
-  .type-analysis{background:#ff6b5f}
-  .type-idea{background:#3aa0ff}
-  .type-image{background:#2fb86b}
-  .iframe-wrap{width:100%;height:100%}
-  .swipe-layer{position:absolute;inset:0;z-index:10}
-  #controls{margin-bottom:28px}
-  button{padding:8px 14px;margin:0 6px;border-radius:8px;border:none;cursor:pointer}
-  #log{font-size:12px;color:#bbb;margin-top:8px}
+  body{
+    margin:0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background:#111;
+    color:#fff;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    overflow:hidden;
+  }
+  #cardArea{
+    position:relative;
+    width:100vw;
+    height:100vh;
+    margin:0;
+    overflow:hidden;
+  }
+  .card{
+    position:absolute;
+    top:0;
+    left:0;
+    width:100%;
+    height:100%;
+    border-radius:12px;
+    background:#333;
+    box-shadow:0 8px 20px rgba(0,0,0,.6);
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:flex-start;
+    transition:transform 0.25s ease-out;
+  }
+  .card .card-type{
+    padding:8px 12px;
+    font-size:16px;
+    align-self:flex-start;
+  }
+  .type-analysis .card-type{ background:#ff6b5f; }
+  .type-idea .card-type{ background:#3aa0ff; }
+  .type-image .card-type{ background:#2fb86b; }
+
+  .iframe-wrap{
+    width:100%;
+    height:100%;
+    flex:1;
+  }
+  .iframe-wrap iframe{
+    width:100%;
+    height:100%;
+    border:none;
+  }
+
+  .swipe-layer{
+    position:absolute;
+    inset:0;
+    z-index:10;
+  }
+
+  #controls{
+    position:absolute;
+    bottom:16px;
+    left:50%;
+    transform:translateX(-50%);
+    z-index:20;
+  }
+  button{
+    padding:8px 14px;
+    margin:0 6px;
+    border-radius:8px;
+    border:none;
+    cursor:pointer;
+  }
+  #log{
+    position:absolute;
+    bottom:52px;
+    left:50%;
+    transform:translateX(-50%);
+    font-size:12px;
+    color:#bbb;
+    z-index:20;
+  }
 </style>
 </head>
 <body>
@@ -41,9 +107,9 @@
     ★ 各カードが読み込むローカルHTMLファイル
 --------------------------------------------------- */
 const PAGE_URL = {
-  idea:      "idea.html",
-  analysis:  "analysis.html",
-  image:     "image.html"
+  idea:     "idea.html",
+  analysis: "analysis.html",
+  image:    "image.html"
 };
 
 // iframe ⇄ 親ページ通信用
@@ -52,9 +118,9 @@ function sendToIframe(iframe, type, payload){
   iframe.contentWindow.postMessage({ type, payload }, location.origin);
 }
 
-// ================= IndexedDB =================
+/* ================= IndexedDB ================= */
 const DB_NAME = 'cardDB';
-const STORE = 'analysis';
+const STORE   = 'analysis';
 let db;
 
 function openDB(){
@@ -67,11 +133,12 @@ function openDB(){
       }
     };
     req.onsuccess = e => { db = e.target.result; resolve(db); };
-    req.onerror = e => reject(e);
+    req.onerror   = e => reject(e);
   });
 }
 
 function saveResult(data){
+  if(!db) return;
   const tx = db.transaction(STORE, 'readwrite');
   tx.objectStore(STORE).add({ time:Date.now(), data });
   tx.oncomplete = ()=>{
@@ -88,10 +155,9 @@ function broadcastUpdate(data){
   });
 }
 
-window.addEventListener('message', async (event)=>{
+window.addEventListener('message', (event)=>{
   if(event.origin !== location.origin) return;
   const { type, payload } = event.data || {};
-
   if(type === 'IMAGE_RESULT'){
     saveResult(payload);
   }
@@ -99,37 +165,38 @@ window.addEventListener('message', async (event)=>{
 
 openDB();
 
+/* ================= ログ ================= */
 const logEl = document.getElementById("log");
-function log(msg){ logEl.textContent = msg; console.log(msg); }
+function log(msg){
+  logEl.textContent = msg;
+  console.log(msg);
+}
 
+/* ================= デッキと状態 ================= */
 let globalCount = 0;
 
+// deck の各要素に {type,label, el, layer, iframe} を持たせる
 let deck = [
   {type:'analysis', label:'解析(4)'},
   {type:'analysis', label:'解析(6)'},
-  {type:'idea', label:'発想(5)'},
-  {type:'image', label:'画像'},
+  {type:'idea',     label:'発想(5)'},
+  {type:'image',    label:'画像'},
   {type:'analysis', label:'解析(2)'},
-  {type:'idea', label:'発想(3)'},
-  {type:'idea', label:'発想(1)'}
+  {type:'idea',     label:'発想(3)'},
+  {type:'idea',     label:'発想(1)'}
 ];
-let centerIndex = 3;
 
-const cardArea = document.getElementById("cardArea");
-const leftBtn = document.getElementById("leftBtn");
-const rightBtn = document.getElementById("rightBtn");
-const toggleIframeInteraction = document.getElementById("toggleIframeInteraction");
+let centerIndex = 3;   // 現在中央に表示するインデックス
+
+const cardArea               = document.getElementById("cardArea");
+const leftBtn                = document.getElementById("leftBtn");
+const rightBtn               = document.getElementById("rightBtn");
+const toggleIframeInteraction= document.getElementById("toggleIframeInteraction");
 
 let overlayEnabled = true;
 const activePointers = new Map();
 
-function getVisibleIndices(){
-  const start = Math.max(0, centerIndex - 1);
-  const end   = Math.min(deck.length - 1, centerIndex + 2);
-  const out = [];
-  for(let i=start; i<=end; i++) out.push(i);
-  return out;
-}
+/* ================= カード生成（1回きり） ================= */
 
 function createCardElement(cardObj, idx){
   const el = document.createElement("div");
@@ -141,13 +208,13 @@ function createCardElement(cardObj, idx){
   el.appendChild(label);
 
   let layerTarget = el;
+  let iframe = null;
 
   if(cardObj.type === "idea" || cardObj.type === "analysis" || cardObj.type === "image"){
     const wrap = document.createElement("div");
     wrap.className = "iframe-wrap";
-    wrap.style.flex = "1";
 
-    const iframe = document.createElement("iframe");
+    iframe = document.createElement("iframe");
     iframe.dataset.cardType = cardObj.type;
     iframe.style.width = "100%";
     iframe.style.height = "100%";
@@ -157,6 +224,7 @@ function createCardElement(cardObj, idx){
     wrap.appendChild(iframe);
     el.appendChild(wrap);
 
+    // スワイプ用オーバーレイ
     const overlay = document.createElement("div");
     overlay.className = "swipe-layer";
     overlay.style.pointerEvents = overlayEnabled ? "auto" : "none";
@@ -165,55 +233,81 @@ function createCardElement(cardObj, idx){
     layerTarget = overlay;
 
     const localUrl = PAGE_URL[cardObj.type];
+    // 一度だけ src を設定
     setTimeout(()=>{
       iframe.src = localUrl;
-      // 親 → iframe 初期メッセージ
       iframe.addEventListener('load', ()=>{
         sendToIframe(iframe, 'INIT', { cardType: cardObj.type });
       });
-    }, 10);(()=>{ iframe.src = localUrl; }, 10);
+    }, 10);
   }
 
-  return {el, layer:layerTarget};
+  // スワイプイベント（DOM再利用なので一度だけ設定）
+  (function(realIndexGetter){
+    function onPointerDown(e){
+      if(e.pointerType === "mouse" && e.button !== 0) return;
+      activePointers.set(e.pointerId, {startX:e.clientX, handled:false, cardIndexGetter:realIndexGetter});
+      try{ layerTarget.setPointerCapture(e.pointerId);}catch{}
+    }
+    function onPointerUp(e){
+      const rec = activePointers.get(e.pointerId);
+      try{ layerTarget.releasePointerCapture(e.pointerId);}catch{}
+      if(!rec) return;
+      if(rec.handled){
+        activePointers.delete(e.pointerId);
+        return;
+      }
+      const dist = e.clientX - rec.startX;
+      if(Math.abs(dist) < 40){
+        activePointers.delete(e.pointerId);
+        return;
+      }
+      rec.handled = true;
+      activePointers.delete(e.pointerId);
+
+      const currentIndex = rec.cardIndexGetter();
+      handleSwipe(dist, currentIndex);
+    }
+
+    layerTarget.addEventListener("pointerdown", onPointerDown);
+    layerTarget.addEventListener("pointerup",   onPointerUp);
+  })(()=> deck.indexOf(cardObj)); // 常に現在の index を取得
+
+  // deck オブジェクトにDOM参照を保持
+  cardObj.el     = el;
+  cardObj.layer  = layerTarget;
+  cardObj.iframe = iframe;
+
+  return { el, layer: layerTarget, iframe };
 }
 
-function render(){
-  activePointers.clear();
-  cardArea.innerHTML = "";
+/* ================= 位置更新（DOMは破棄しない） ================= */
 
-  const indices = getVisibleIndices();
+function updateCardPositions(){
+  deck.forEach((card, i)=>{
+    const el = card.el;
+    if(!el) return;
+    const offset = i - centerIndex;
+    // 中央を 0、左 -1、右 +1 みたいな感じで横方向にスライド
+    el.style.transform = `translateX(${offset * 100}%)`;
+    el.style.zIndex    = 100 - Math.abs(offset);
+    el.style.opacity   = Math.abs(offset) <= 2 ? "1" : "0"; // 遠いカードは非表示気味など調整可
+  });
 
-  indices.forEach(i=>{
-    const card = deck[i];
-    const {el, layer} = createCardElement(card, i);
+  log(`centerIndex: ${centerIndex} / deck length: ${deck.length}`);
+}
 
-    (function(realIndex){
-      function onPointerDown(e){
-        if(e.pointerType === "mouse" && e.button !== 0) return;
-        activePointers.set(e.pointerId, {startX:e.clientX, handled:false});
-        try{ layer.setPointerCapture(e.pointerId);}catch{}
-      }
-      function onPointerUp(e){
-        const rec = activePointers.get(e.pointerId);
-        try{ layer.releasePointerCapture(e.pointerId);}catch{}
-        if(!rec) return;
-        if(rec.handled){ activePointers.delete(e.pointerId); return; }
+/* ================= 初期化 ================= */
 
-        const dist = e.clientX - rec.startX;
-        if(Math.abs(dist) < 40){ activePointers.delete(e.pointerId); return; }
-
-        rec.handled = true;
-        activePointers.delete(e.pointerId);
-
-        handleSwipe(dist, realIndex);
-      }
-      layer.addEventListener("pointerdown", onPointerDown);
-      layer.addEventListener("pointerup", onPointerUp);
-    })(i);
-
+function initCards(){
+  deck.forEach((card, i)=>{
+    const { el } = createCardElement(card, i);
     cardArea.appendChild(el);
   });
+  updateCardPositions();
 }
+
+/* ================= スワイプ処理 ================= */
 
 function handleSwipe(dist, index){
   const newType = dist > 0 ? "idea" : "analysis";
@@ -224,30 +318,47 @@ function handleSwipe(dist, index){
     label: newType === "idea" ? `発想(${globalCount})` : `解析(${globalCount})`
   };
 
+  // deck に挿入
   deck.splice(index + 1, 0, newCard);
+
+  // DOM 生成して所定位置に挿入（破棄はしない）
+  const { el } = createCardElement(newCard, index + 1);
+  if(index + 1 >= cardArea.children.length){
+    cardArea.appendChild(el);
+  }else{
+    cardArea.insertBefore(el, cardArea.children[index + 1]);
+  }
+
+  // 中央を新しいカードに
   centerIndex = index + 1;
-  render();
+  updateCardPositions();
 }
 
+/* ================= ボタン操作 ================= */
+
 leftBtn.addEventListener("click", ()=>{
-  if(centerIndex > 0) centerIndex--;
-  render();
+  if(centerIndex > 0){
+    centerIndex--;
+    updateCardPositions();
+  }
 });
+
 rightBtn.addEventListener("click", ()=>{
-  if(centerIndex < deck.length-1) centerIndex++;
-  render();
+  if(centerIndex < deck.length - 1){
+    centerIndex++;
+    updateCardPositions();
+  }
 });
 
 toggleIframeInteraction.addEventListener("click", ()=>{
   overlayEnabled = !overlayEnabled;
-
   document.querySelectorAll('.swipe-layer').forEach(layer=>{
     layer.style.pointerEvents = overlayEnabled ? "auto" : "none";
   });
 });
 
-render();
-
+/* ================= 起動 ================= */
+initCards();
 </script>
 </body>
 </html>
