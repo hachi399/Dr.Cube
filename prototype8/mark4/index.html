@@ -144,44 +144,4 @@ render();
 </script>
 </body>
 </html>
-      const message = payload.message || "解析メッセージがありません。";
-      const p = document.createElement("p");
-      p.textContent = message;
-      chat.appendChild(p);
-      chat.scrollTop = chat.scrollHeight;
-    });
-
-    // メッセージ送信
-    async function sendMessage() {
-      const input = document.getElementById("input");
-      const message = input.value.trim();
-      if (!message) return;
-
-      const chat = document.getElementById("chat");
-      const p = document.createElement("p");
-      p.textContent = message;
-      chat.appendChild(p);
-      chat.scrollTop = chat.scrollHeight;
-
-      input.value = "";
-
-      // APIへ送信
-      try {
-        const response = await fetch(API_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message }),
-        });
-        const data = await response.json();
-
-        const pResp = document.createElement("p");
-        pResp.textContent = data.reply || "返信がありません。";
-        chat.appendChild(pResp);
-        chat.scrollTop = chat.scrollHeight;
-      } catch (error) {
-        console.error("Error:", error);
-      }
-    }
-  </script>
-</body>
-</html>
+      
