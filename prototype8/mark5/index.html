@@ -112,11 +112,18 @@ function broadcastUpdate(data){
   });
 }
 
-window.addEventListener('message', event=>{
-  if(event.origin !== location.origin) return;
+window.addEventListener('message', event => {
+  if (event.origin !== location.origin) return;
+
   const { type, payload } = event.data || {};
 
-  if(type === 'IMAGE_RESULT'){
+  const allowedTypes = [
+    'IMAGE_RESULT',
+    'IDEA_RESULT',
+    'ANALYSIS_RESULT'
+  ];
+
+  if (allowedTypes.includes(type)) {
     saveResult(payload);
   }
 });
