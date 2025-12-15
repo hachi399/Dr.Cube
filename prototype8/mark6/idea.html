@@ -217,6 +217,14 @@
     simulation.alpha(0.3).restart();
   });
 
+ 
+  // 🔹 親ページへ送信
+  parent.postMessage({
+    type: 'IDEA_RESULT',
+    payload: word
+  }, location.origin);
+//------------------------------------
+
   </script>
 </body>
 </html>

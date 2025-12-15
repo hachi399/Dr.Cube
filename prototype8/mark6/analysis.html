@@ -142,7 +142,7 @@ async function sendMessage() {
 
   // ✅ 親ページへ解析結果を送信
   parent.postMessage({
-    type: "AI_RESULT",
+    type: "ANALYSIS_RESULT",
     payload: data.reply
   }, location.origin);
 }
