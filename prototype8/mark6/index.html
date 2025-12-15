@@ -247,8 +247,34 @@ function handleSwipe(dist, index){
 
   deck.splice(index + 1, 0, card);
   createCard(card);
+  notifyChildrenWithDB();
+
   centerIndex = index + 1;
   render();
+}
+//IndexedDBを読みだして送る関数
+function loadAllFromDB() {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const store = tx.objectStore(STORE);
+    const req = store.getAll();
+
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = e => reject(e);
+  });
+}
+//カード生成時に呼び出す関数
+async function notifyChildrenWithDB() {
+  const allData = await loadAllFromDB();
+
+  document.querySelectorAll('iframe').forEach(ifr => {
+    if (ifr.dataset.cardType === 'analysis' || ifr.dataset.cardType === 'idea') {
+      ifr.contentWindow.postMessage(
+        { type: 'DB_UPDATE', payload: allData },
+        location.origin
+      );
+    }
+  });
 }
 
 /* ===== 初期化 ===== */
