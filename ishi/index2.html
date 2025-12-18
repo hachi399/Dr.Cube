@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Gaze Calibration Pro - JS</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+    <script src="https://docs.opencv.org/4.x/opencv.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/numeric/1.2.6/numeric.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="ui-overlay">
+        <div id="status">Status: Initializing...</div>
+        <div id="instruction">Press 'C' to Start Calibration</div>
+    </div>
+    <div class="canvas-container">
+        <canvas id="fishCanvas" width="1920" height="1080"></canvas>
+        <canvas id="frontCanvas" width="640" height="480"></canvas>
+    </div>
+    
+    <video id="frontCam" autoplay playsinline style="display:none;"></video>
+    <video id="fishCam" autoplay playsinline style="display:none;"></video>
+
+    <script src="script.js"></script>
+</body>
+</html>
