@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Gaze Calibration JS</title>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://docs.opencv.org/4.x/opencv.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/numeric/1.2.6/numeric.min.js"></script>
+<style>canvas { border:1px solid black; }</style>
+</head>
+<body>
+<video id="frontCam" autoplay playsinline width="640" height="480" style="display:none;"></video>
+<video id="fishCam" autoplay playsinline width="1920" height="1080" style="display:none;"></video>
+<canvas id="fishCanvas" width="1920" height="1080"></canvas>
+<canvas id="frontCanvas" width="640" height="480"></canvas>
+
+<script>
+const fishPoints = [
+  [480,270],[960,270],[1440,270],
+  [480,540],[960,540],[1440,540],
+  [480,810],[960,810],[1440,810]
+];
+
+let calibIndex = 0;
+let calibStorage = JSON.parse(localStorage.getItem("calibStorage")||"[]");
+let modelCoef = JSON.parse(localStorage.getItem("modelCoef")||"null");
+let calibMode = calibStorage.length<9;
+let samplingFrames = 15;
+let samplingBuffer = [];
+let uvBuffer = [];
+let snapBuffer = [];
+
+const fishCanvas = document.getElementById("fishCanvas");
+const fishCtx = fishCanvas.getContext("2d");
+const frontCanvas = document.getElementById("frontCanvas");
+const frontCtx = frontCanvas.getContext("2d");
+
+const frontVideo = document.getElementById("frontCam");
+const fishVideo = document.getElementById("fishCam");
+
+// ------------------- MediaPipe FaceMesh -----------------
+const faceMesh = new FaceMesh({
+  locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+});
+faceMesh.setOptions({maxNumFaces:1, refineLandmarks:true, minDetectionConfidence:0.5, minTrackingConfidence:0.5});
+let gaze3d = null;
+
+faceMesh.onResults(results=>{
+  if(!results.multiFaceLandmarks) return;
+  const lm = results.multiFaceLandmarks[0];
+  // 虹彩中心を単純平均で3D座標取得
+  const irisIds = [468,469,470,471];
+  let iris=[0,0,0];
+  irisIds.forEach((id,i)=>{iris[0]+=lm[id].x; iris[1]+=lm[id].y; iris[2]+=lm[id].z;});
+  iris = iris.map(v=>v/irisIds.length);
+  // 左目中心
+  const eyeCenter=[lm[33].x,lm[33].y,lm[33].z];
+  gaze3d = iris.map((v,i)=>v-eyeCenter[i]);
+});
+
+// ------------------- Helpers ----------------------------
+function poly3Features(pt){ 
+  const [x,y,z] = pt; 
+  return [1,x,y,z,x*x,y*y,z*z,x*y,y*z,x*z]; 
+}
+
+function trainModel(){ 
+  if(calibStorage.length<9){ alert("9点揃っていません"); return; }
+  const A = calibStorage.map(c=>poly3Features(c.slice(0,3)));
+  const Y_u = calibStorage.map(c=>c[3]);
+  const Y_v = calibStorage.map(c=>c[4]);
+  function lstsq(A,Y){
+    const At = numeric.transpose(A);
+    return numeric.solve(numeric.dot(At,A), numeric.dot(At,Y));
+  }
+  modelCoef = {coef_u:lstsq(A,Y_u), coef_v:lstsq(A,Y_v)};
+  localStorage.setItem("modelCoef", JSON.stringify(modelCoef));
+  alert("モデル学習完了");
+}
+
+function gaze3dToFish(pt){
+  if(!modelCoef) return null;
+  const f = poly3Features(pt);
+  let u=0,v=0;
+  f.forEach((v0,i)=>{u+=v0*modelCoef.coef_u[i]; v+=v0*modelCoef.coef_v[i];});
+  return [Math.round(u), Math.round(v)];
+}
+
+// ------------------- Camera ----------------------------
+async function startCameras(){
+  const frontStream = await navigator.mediaDevices.getUserMedia({video:{width:640,height:480}});
+  frontVideo.srcObject = frontStream;
+  const fishStream = await navigator.mediaDevices.getUserMedia({video:{width:1920,height:1080}});
+  fishVideo.srcObject = fishStream;
+}
+
+// ------------------- Main Loop --------------------------
+function loop(){
+  frontCtx.drawImage(frontVideo,0,0,frontCanvas.width,frontCanvas.height);
+  if(gaze3d) faceMesh.send({image: frontCanvas});
+  fishCtx.drawImage(fishVideo,0,0,fishCanvas.width,fishCanvas.height);
+
+  // キャリブUI
+  if(calibMode && calibIndex<fishPoints.length){
+    const [tx,ty] = fishPoints[calibIndex];
+    fishCtx.fillStyle="red";
+    fishCtx.beginPath();
+    fishCtx.arc(tx,ty,20,0,2*Math.PI);
+    fishCtx.fill();
+    fishCtx.font="30px Arial";
+    fishCtx.fillText(`Point ${calibIndex+1}/9 - Look & Press Enter`,30,50);
+  }
+
+  // モデルがあれば緑点表示
+  if(modelCoef && gaze3d){
+    const uv=gaze3dToFish(gaze3d);
+    if(uv){
+      uvBuffer.push(uv);
+      if(uvBuffer.length>10) uvBuffer.shift();
+      const uAvg = Math.round(uvBuffer.reduce((a,v)=>a+v[0],0)/uvBuffer.length);
+      const vAvg = Math.round(uvBuffer.reduce((a,v)=>a+v[1],0)/uvBuffer.length);
+      fishCtx.fillStyle="green";
+      fishCtx.beginPath();
+      fishCtx.arc(uAvg,vAvg,12,0,2*Math.PI);
+      fishCtx.fill();
+    }
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// ------------------- Key Controls ----------------------
+document.addEventListener("keydown",(e)=>{
+  // Enter/Space: サンプリング
+  if((e.key==="Enter"||e.key===" ") && calibMode && gaze3d){
+    samplingBuffer.push([...gaze3d]);
+    if(samplingBuffer.length>=samplingFrames){
+      const median=[0,1,2].map(i=>{
+        const arr=samplingBuffer.map(p=>p[i]).sort((a,b)=>a-b);
+        return arr[Math.floor(arr.length/2)];
+      });
+      const [tx,ty] = fishPoints[calibIndex];
+      calibStorage.push([median[0],median[1],median[2],tx,ty]);
+      localStorage.setItem("calibStorage",JSON.stringify(calibStorage));
+      calibIndex++;
+      samplingBuffer=[];
+      if(calibIndex>=9){
+        calibMode=false;
+        alert("✅ 全9点キャリブ完了");
+      }
+    }
+  }
+  // t: 学習
+  if(e.key==="t") trainModel();
+  // c: キャリブリセット
+  if(e.key==="c"){ calibMode=true; calibIndex=0; calibStorage=[]; localStorage.removeItem("calibStorage"); localStorage.removeItem("modelCoef"); modelCoef=null; }
+  // a: キャリブ再スタート（生データ残す）
+  if(e.key==="a"){ calibMode=true; calibIndex=0; samplingBuffer=[]; }
+  // s: 保存（魚眼画像＋注視点）
+  if(e.key==="s"){
+    const link = document.createElement("a");
+    link.download=`fish_snap_${Date.now()}.png`;
+    // キャリブ点・緑点描画済みのCanvasをPNGとして保存
+    link.href=fishCanvas.toDataURL();
+    link.click();
+  }
+  // q/ESC: 終了
+  if(e.key==="q"||e.key==="Escape"){ window.close(); }
+});
+
+// ------------------- Start -----------------------------
+startCameras().then(loop);
+</script>
+</body>
+</html>
