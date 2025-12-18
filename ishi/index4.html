@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gaze Tracking Web - High Res FishEye</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    
+    <style>
+        body { font-family: sans-serif; background: #222; color: #eee; margin: 0; display: flex; flex-direction: column; align-items: center; }
+        h1 { margin: 10px 0; font-size: 1.2rem; }
+        .controls { background: #333; padding: 10px; border-radius: 8px; margin-bottom: 10px; display: flex; gap: 10px; flex-wrap: wrap; }
+        select, button { padding: 8px; border-radius: 4px; border: none; cursor: pointer; }
+        button.primary { background: #00aaff; color: white; font-weight: bold; }
+        button.danger { background: #ff4444; color: white; }
+        
+        .container { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+        .view-box { position: relative; border: 2px solid #555; }
+        
+        video { display: none; } /* Videoタグは隠してCanvasに描画 */
+        
+        /* ★ここがポイント！
+           Canvasの実体は大きくても、表示はCSSで制御します。
+           max-widthを指定することで、画面内では小さく表示されます。
+        */
+        canvas { display: block; background: #000; max-width: 640px; height: auto; }
+        
+        .overlay-text {
+            position: absolute; top: 10px; left: 10px; 
+            background: rgba(0,0,0,0.5); padding: 5px; pointer-events: none;
+        }
+        #status { color: #0f0; font-weight: bold; margin-left: 10px; }
+    </style>
+</head>
+<body>
+
+    <h1>Web Gaze Calibration (FishEye 1080p)</h1>
+
+    <div class="controls">
+        <select id="selFrontCam"><option value="">正面カメラを選択</option></select>
+        <select id="selFishCam"><option value="">魚眼(投影)カメラを選択</option></select>
+        <button id="btnStart" class="primary">カメラ開始</button>
+        <div style="border-left:1px solid #666; width:1px;"></div>
+        <button id="btnCalibStart">キャリブ開始 (C)</button>
+        <button id="btnTrain">学習実行 (T)</button>
+        <button id="btnSaveSnap">スナップショット (S)</button>
+        <button id="btnClear" class="danger">データ削除</button>
+        <span id="status">待機中...</span>
+    </div>
+
+    <div class="container">
+        <div class="view-box">
+            <canvas id="canvasFront" width="640" height="480"></canvas>
+            <div class="overlay-text">Front Camera (Tracking)</div>
+        </div>
+        
+        <div class="view-box">
+            <canvas id="canvasFish" width="1920" height="1080"></canvas>
+            <div class="overlay-text">Target View (1080p)</div>
+        </div>
+    </div>
+
+    <video id="videoFront" playsinline autoplay></video>
+    <video id="videoFish" playsinline autoplay></video>
+
+<script>
+// ==========================================
+// 1. IndexedDB Utils (変更なし)
+// ==========================================
+const DB_NAME = "GazeCalibDB";
+const DB_VERSION = 1;
+const STORE_CALIB = "calib_data";
+const STORE_MODEL = "regression_model";
+const STORE_SNAPS = "snapshots";
+
+class IDB {
+    static async open() {
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open(DB_NAME, DB_VERSION);
+            req.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains(STORE_CALIB)) db.createObjectStore(STORE_CALIB, { keyPath: "id", autoIncrement: true });
+                if (!db.objectStoreNames.contains(STORE_MODEL)) db.createObjectStore(STORE_MODEL, { keyPath: "name" });
+                if (!db.objectStoreNames.contains(STORE_SNAPS)) db.createObjectStore(STORE_SNAPS, { keyPath: "time" });
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    static async save(storeName, data) {
+        const db = await this.open();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(storeName, "readwrite");
+            const store = tx.objectStore(storeName);
+            const req = store.put(data);
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    static async getAll(storeName) {
+        const db = await this.open();
+        return new Promise((resolve) => {
+            const tx = db.transaction(storeName, "readonly");
+            const req = tx.objectStore(storeName).getAll();
+            req.onsuccess = () => resolve(req.result);
+        });
+    }
+    
+    static async get(storeName, key) {
+        const db = await this.open();
+        return new Promise((resolve) => {
+            const tx = db.transaction(storeName, "readonly");
+            const req = tx.objectStore(storeName).get(key);
+            req.onsuccess = () => resolve(req.result);
+        });
+    }
+
+    static async clearAll() {
+        const db = await this.open();
+        const stores = [STORE_CALIB, STORE_MODEL, STORE_SNAPS];
+        for (const s of stores) {
+            const tx = db.transaction(s, "readwrite");
+            tx.objectStore(s).clear();
+        }
+        console.log("DB Cleared");
+    }
+}
+
+// ==========================================
+// 2. Math & Filter Logic (変更なし)
+// ==========================================
+
+class OneEuroFilter {
+    constructor(freq = 60, minCutoff = 1.0, beta = 0.03, dCutoff = 1.0) {
+        this.freq = freq;
+        this.minCutoff = minCutoff;
+        this.beta = beta;
+        this.dCutoff = dCutoff;
+        this.xPrev = null;
+        this.dxPrev = null;
+        this.lastTime = null;
+    }
+
+    filter(x) {
+        const t = performance.now() / 1000;
+        if (this.lastTime === null) {
+            this.lastTime = t;
+            this.xPrev = x;
+            this.dxPrev = 0;
+            return x;
+        }
+        let dt = t - this.lastTime;
+        this.lastTime = t;
+        if (dt <= 0) dt = 1.0 / this.freq;
+        
+        const cutoff = this.minCutoff; 
+        const alpha = this.smoothingFactor(t, cutoff);
+        const xHat = x * alpha + this.xPrev * (1.0 - alpha);
+        
+        this.xPrev = xHat;
+        return xHat;
+    }
+
+    smoothingFactor(t, cutoff) {
+        const r = 2 * Math.PI * cutoff;
+        return r / (r + this.freq);
+    }
+}
+
+function getPoly3Features(f) {
+    // 生の13個 + 主要な項の2乗をいくつか足して「非線形」にする
+    return [
+        1.0, 
+        ...f,              // 生の13個
+        f[0]*f[0], f[1]*f[1], f[2]*f[2] // 座標の2乗を追加（一例）
+    ];
+}
+
+function trainModel(calibData) {
+    if (calibData.length < 9) return null;
+    const A = [];
+    const Yu = [];
+    const Yv = [];
+
+    calibData.forEach(d => {
+        // ★ ここを修正！ 
+        // d.gaze3d[0]... とバラさず、配列そのまま渡すわよ
+        const feat = getPoly3Features(d.gaze3d); 
+        
+        A.push(feat);
+        Yu.push(d.target[0]);
+        Yv.push(d.target[1]);
+    });
+
+    try {
+        const matA = math.matrix(A);
+        const matYu = math.matrix(Yu);
+        const matYv = math.matrix(Yv);
+        
+        const At = math.transpose(matA);
+        const AtA = math.multiply(At, matA);
+        const AtA_inv = math.inv(AtA);
+        const M = math.multiply(AtA_inv, At);
+        
+        const coef_u = math.multiply(M, matYu).toArray();
+        const coef_v = math.multiply(M, matYv).toArray();
+
+        return { coef_u, coef_v };
+    } catch (e) {
+        console.error("Training Error:", e);
+        return null;
+    }
+}
+
+function predictGaze(gaze3d, model) {
+    if (!model) return null;
+    const f = getPoly3Features(gaze3d); // 変更：引数をそのまま渡す
+    let u = 0, v = 0;
+    for(let i=0; i<f.length; i++){
+        u += f[i] * model.coef_u[i];
+        v += f[i] * model.coef_v[i];
+    }
+    return [u, v];
+}
+
+// ==========================================
+// 3. Gaze Logic (3D Calculation)
+// ==========================================
+const REAL_IPD = 0.064; 
+const EYE_OFFSET = -0.012; 
+const ID_IRIS_L = [468, 469, 470, 471];
+const ID_IRIS_R = [473, 474, 475, 476];
+const ID_OUTER_L = 33, ID_INNER_L = 133;
+const ID_OUTER_R = 263, ID_INNER_R = 362;
+// 左目 瞼の輪郭
+const ID_EYELID_UPPER_L = [160, 159, 158, 157]; 
+const ID_EYELID_LOWER_L = [144, 145, 153, 154];
+// 右目 瞼の輪郭
+const ID_EYELID_UPPER_R = [384, 385, 386, 387];
+const ID_EYELID_LOWER_R = [373, 374, 380, 381];
+
+// カメラパラメータ (Frontカメラ用)
+let camParams = { fx: 640, fy: 640, cx: 320, cy: 240 }; 
+
+// --- 1. まずは計算用の関数を定義 ---
+function getEyeCenter(landmarks, upperIds, lowerIds, w, h) {
+    let sx = 0, sy = 0, count = 0;
+    [...upperIds, ...lowerIds].forEach(id => {
+        sx += landmarks[id].x * w;
+        sy += landmarks[id].y * h;
+        count++;
+    });
+    return [sx / count, sy / count];
+}
+
+function processLandmarks(landmarks, width, height) {
+    const toPx = (lm) => [lm.x * width, lm.y * height];
+    const toCam = (px, depth) => {
+        const x = (px[0] - camParams.cx) * depth / camParams.fx;
+        const y = (px[1] - camParams.cy) * depth / camParams.fy;
+        return [x, y, depth];
+    };
+    
+    // 距離(Z)の計算
+    const pOuterL = toPx(landmarks[ID_OUTER_L]);
+    const pOuterR = toPx(landmarks[ID_OUTER_R]);
+    const pixDist = Math.hypot(pOuterR[0] - pOuterL[0], pOuterR[1] - pOuterL[1]);
+    const distance = (REAL_IPD * camParams.fx) / (pixDist + 1e-6);
+
+    // 虹彩(L_I) と 眼球中心(L_C) の3D座標
+    const irisL_px = getIrisAvg(ID_IRIS_L, landmarks, width, height);
+    const irisR_px = getIrisAvg(ID_IRIS_R, landmarks, width, height); // ★ここを追加！
+    
+    const centerL_px = getEyeCenter(landmarks, ID_EYELID_UPPER_L, ID_EYELID_LOWER_L, width, height);
+    const centerR_px = getEyeCenter(landmarks, ID_EYELID_UPPER_R, ID_EYELID_LOWER_R, width, height); // ★ここも追加！
+
+    const L_I = toCam(irisL_px, distance);
+    const L_C = toCam(centerL_px, distance);
+
+    // 視線ベクトルと正規化
+    const gaze_vec = [L_I[0] - L_C[0], L_I[1] - L_C[1], L_I[2] - L_C[2]];
+    const norm = Math.sqrt(gaze_vec[0]**2 + gaze_vec[1]**2 + gaze_vec[2]**2);
+    const gaze_dir = norm > 1e-6 ? gaze_vec.map(v => v / norm) : [0, 0, 0];
+
+    // 顔の向き (Yaw, Pitch, Roll)
+    const nose = landmarks[1];
+    const leftTemple = landmarks[234];
+    const rightTemple = landmarks[454];
+    const yaw = rightTemple.z - leftTemple.z;
+    const pitch = nose.y - (leftTemple.y + rightTemple.y) / 2;
+    const roll = rightTemple.y - leftTemple.y;
+
+    const feature_vector = [
+        ...L_C, ...L_I, ...gaze_dir,
+        distance,
+        yaw, pitch, roll
+    ];
+
+    return { 
+        gaze3d: feature_vector, 
+        distance, 
+        irisL: irisL_px, irisR: irisR_px, // これでエラーが消えるわ
+        centerL: centerL_px, centerR: centerR_px 
+    };
+}
+
+// 補助関数: getIrisAvg も追加
+function getIrisAvg(ids, landmarks, w, h) {
+    let sx=0, sy=0;
+    ids.forEach(i => { sx += landmarks[i].x; sy += landmarks[i].y; });
+    return [sx/ids.length * w, sy/ids.length * h];
+}
+
+// ==========================================
+// 4. Main Application
+// ==========================================
+const videoFront = document.getElementById('videoFront');
+const videoFish = document.getElementById('videoFish');
+const canvasFront = document.getElementById('canvasFront');
+const canvasFish = document.getElementById('canvasFish'); // これは1920x1080
+const ctxFront = canvasFront.getContext('2d');
+const ctxFish = canvasFish.getContext('2d');
+const statusEl = document.getElementById('status');
+
+let state = {
+    isCalibrating: false,
+    calibIndex: 0,
+    calibPoints: [
+        {x: 0.25, y: 0.25}, {x: 0.5, y: 0.25}, {x: 0.75, y: 0.25},
+        {x: 0.25, y: 0.5},  {x: 0.5, y: 0.5},  {x: 0.75, y: 0.5},
+        {x: 0.25, y: 0.75}, {x: 0.5, y: 0.75}, {x: 0.75, y: 0.75}
+    ], 
+    samples: [],
+    model: null,
+    currentGaze3d: null,
+    gazeHistory: [] 
+};
+
+const faceMesh = new FaceMesh({locateFile: (file) => {
+  return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+}});
+faceMesh.setOptions({
+  maxNumFaces: 1,
+  refineLandmarks: true,
+  minDetectionConfidence: 0.5,
+  minTrackingConfidence: 0.5
+});
+faceMesh.onResults(onResults);
+
+// カメラ起動処理（ここを修正）
+async function startCameras() {
+    const idFront = document.getElementById('selFrontCam').value;
+    const idFish = document.getElementById('selFishCam').value;
+
+    if(!idFront || !idFish) {
+        alert("両方のカメラを選択してください");
+        return;
+    }
+
+    // 正面カメラ (解析用なので 640x480 で十分)
+    try {
+        const streamFront = await navigator.mediaDevices.getUserMedia({ 
+            video: { deviceId: { exact: idFront }, width: 640, height: 480 } 
+        });
+        videoFront.srcObject = streamFront;
+        await videoFront.play();
+
+        // 魚眼カメラ (★高画質 1920x1080 を要求)
+        const streamFish = await navigator.mediaDevices.getUserMedia({ 
+            video: { 
+                deviceId: { exact: idFish }, 
+                width: { ideal: 1920 }, // idealを使うと、対応していれば1920になります
+                height: { ideal: 1080 } 
+            } 
+        });
+        videoFish.srcObject = streamFish;
+        await videoFish.play();
+
+        // 正面カメラのパラメータはFront解像度(640x480)に合わせる
+        camParams.fx = 640; camParams.fy = 640; 
+        camParams.cx = 320; camParams.cy = 240;
+
+        processLoop();
+        
+        const savedModel = await IDB.get(STORE_MODEL, "gaze_model");
+        if(savedModel) {
+            state.model = savedModel.data;
+            statusEl.textContent = "学習済みモデルをロードしました";
+        }
+    } catch(err) {
+        console.error("Camera Error:", err);
+        alert("カメラの起動に失敗しました。コンソールを確認してください。");
+    }
+}
+
+async function processLoop() {
+    await faceMesh.send({image: videoFront});
+    drawFishEyeView();
+    requestAnimationFrame(processLoop);
+}
+
+function onResults(results) {
+    // 1. results.image（入力ソース）自体が存在し、かつサイズがあるか徹底チェック
+    if (!results.image || results.image.width === 0 || results.image.height === 0) {
+        return; 
+    }
+
+    // 2. 描画先のキャンバスが存在し、サイズが0でないかチェック
+    if (!canvasFront || canvasFront.width === 0 || canvasFront.height === 0) {
+        return;
+    }
+
+    // 3. 描画処理
+    ctxFront.save();
+    
+    // 描画先のサイズに合わせてクリア
+    ctxFront.clearRect(0, 0, canvasFront.width, canvasFront.height);
+    
+    try {
+        // ここでエラーが起きていたので、安全に描画
+        ctxFront.drawImage(results.image, 0, 0, canvasFront.width, canvasFront.height);
+    } catch (e) {
+        console.warn("描画に失敗したけれど、処理を続行するわね:", e);
+        ctxFront.restore();
+        return;
+    }
+
+    // --- 以降のランドマーク処理 ---
+    if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+        const landmarks = results.multiFaceLandmarks[0];
+        const w = canvasFront.width;
+        const h = canvasFront.height;
+        
+        // (以下、あなたの元のコードと同じ処理...)
+        const data = processLandmarks(landmarks, w, h);
+        state.currentGaze3d = data.gaze3d;
+
+        // 点の描画などはここに続く...
+        const drawPointOnly = (id, color, size = 4) => {
+            const lm = landmarks[id];
+            const x = lm.x * w;
+            const y = lm.y * h;
+            ctxFront.fillStyle = color;
+            ctxFront.beginPath();
+            ctxFront.arc(x, y, size, 0, 2 * Math.PI);
+            ctxFront.fill();
+        };
+
+        const eyeCenterL = getEyeCenter(landmarks, ID_EYELID_UPPER_L, ID_EYELID_LOWER_L, w, h);
+        const eyeCenterR = getEyeCenter(landmarks, ID_EYELID_UPPER_R, ID_EYELID_LOWER_R, w, h);
+        
+        // 十字などの描画...
+        const drawCross = (pos, color) => {
+            ctxFront.strokeStyle = color;
+            ctxFront.lineWidth = 2;
+            ctxFront.beginPath();
+            ctxFront.moveTo(pos[0]-5, pos[1]); ctxFront.lineTo(pos[0]+5, pos[1]);
+            ctxFront.moveTo(pos[0], pos[1]-5); ctxFront.lineTo(pos[0], pos[1]+5);
+            ctxFront.stroke();
+        };
+
+        drawCross(eyeCenterL, "#ff4444");
+        drawCross(eyeCenterR, "#ff4444");
+        drawPointOnly(ID_OUTER_L, "#ff00ff");
+        drawPointOnly(ID_INNER_L, "#ff00ff");
+        drawPointOnly(ID_OUTER_R, "#ffff00");
+        drawPointOnly(ID_INNER_R, "#ffff00");
+        ID_IRIS_L.forEach(id => drawPointOnly(id, "#00ffff", 2));
+        ID_IRIS_R.forEach(id => drawPointOnly(id, "#00ff00", 2));
+
+        ctxFront.fillStyle = "white";
+        ctxFront.beginPath(); ctxFront.arc(data.irisL[0], data.irisL[1], 3, 0, 2*Math.PI); ctxFront.fill();
+        ctxFront.beginPath(); ctxFront.arc(data.irisR[0], data.irisR[1], 3, 0, 2*Math.PI); ctxFront.fill();
+
+        ctxFront.fillStyle = "#0f0";
+        ctxFront.font = "bold 16px sans-serif";
+        ctxFront.fillText(`Z: ${data.distance.toFixed(3)}m`, 10, 25);
+    } else {
+        state.currentGaze3d = null;
+    }
+
+    ctxFront.restore();
+}
+
+// 魚眼側描画
+function drawFishEyeView() {
+    // 魚眼Canvasは 1920x1080 として扱われます
+    const w = canvasFish.width;  // 1920
+    const h = canvasFish.height; // 1080
+
+    ctxFish.clearRect(0, 0, w, h);
+    ctxFish.drawImage(videoFish, 0, 0, w, h); // 映像も大きく描画
+
+    if (state.isCalibrating) {
+        if (state.calibIndex < state.calibPoints.length) {
+            const pt = state.calibPoints[state.calibIndex];
+            const tx = pt.x * w; // w=1920 なので正しく配置される
+            const ty = pt.y * h;
+
+            ctxFish.fillStyle = "red";
+            ctxFish.beginPath(); ctxFish.arc(tx, ty, 30, 0, 2*Math.PI); ctxFish.fill(); // 点も少し大きく(30px)
+            
+            ctxFish.fillStyle = "white";
+            ctxFish.font = "40px Arial"; // 文字も大きく
+            ctxFish.fillText(`Look here & Press Enter (${state.calibIndex+1}/9)`, 40, 80);
+        } else {
+            state.isCalibrating = false;
+            statusEl.textContent = "キャリブ完了。't'キーで学習してください。";
+        }
+    } else {
+        if (state.model && state.currentGaze3d) {
+            const pred = predictGaze(state.currentGaze3d, state.model);
+            if (pred) {
+                state.gazeHistory.push(pred);
+                if (state.gazeHistory.length > 10) state.gazeHistory.shift();
+                
+                let rawU = 0, rawV = 0;
+                state.gazeHistory.forEach(p => { rawU += p[0]; rawV += p[1]; });
+                rawU /= state.gazeHistory.length;
+                rawV /= state.gazeHistory.length;
+
+                // --- ここから「画面端に固定」するロジック ---
+                
+                // 画面外かどうかのフラグ
+                const isOffScreen = (rawU < 0 || rawU > w || rawV < 0 || rawV > h);
+                
+                // 座標を画面内に制限（マージンを20px持たせる）
+                const margin = 20;
+                const clampedU = Math.max(margin, Math.min(w - margin, rawU));
+                const clampedV = Math.max(margin, Math.min(h - margin, rawV));
+
+                // 描画設定
+                if (isOffScreen) {
+                    // 画面外のときは警告色（オレンジや赤）にして、少し目立たせる
+                    ctxFish.fillStyle = "orange";
+                    ctxFish.strokeStyle = "white";
+                    ctxFish.lineWidth = 4;
+                    ctxFish.beginPath();
+                    ctxFish.arc(clampedU, clampedV, 25, 0, 2 * Math.PI);
+                    ctxFish.fill();
+                    ctxFish.stroke();
+                    
+                    ctxFish.fillStyle = "white";
+                    ctxFish.font = "bold 30px Arial";
+                    ctxFish.fillText("OUT", clampedU + 30, clampedV);
+                } else {
+                    // 画面内のときは通常通り緑色
+                    ctxFish.fillStyle = "#0f0";
+                    ctxFish.beginPath();
+                    ctxFish.arc(clampedU, clampedV, 20, 0, 2 * Math.PI);
+                    ctxFish.fill();
+                }
+
+                // デバッグ用に生座標も小さく表示
+                ctxFish.fillStyle = "rgba(255, 255, 255, 0.5)";
+                ctxFish.font = "20px Arial";
+                ctxFish.fillText(`Raw: ${Math.round(rawU)}, ${Math.round(rawV)}`, 20, h - 20);
+            }
+        }
+    }
+}
+
+window.addEventListener('keydown', async (e) => {
+    if ((e.code === 'Enter' || e.code === 'Space') && state.isCalibrating) {
+        if (!state.currentGaze3d) { console.warn("視線なし"); return; }
+        
+        statusEl.textContent = "サンプリング中...";
+        const allSamples = [];
+        // 15回データをとって平均化する（手ブレ防止）
+        for(let i=0; i<15; i++) {
+            if(state.currentGaze3d) allSamples.push([...state.currentGaze3d]);
+            await new Promise(r => setTimeout(r, 30));
+        }
+        
+        if (allSamples.length > 0) {
+            // ★13個の要素すべてについて平均を出す
+            const numFeatures = allSamples[0].length;
+            const averagedFeatures = new Array(numFeatures).fill(0);
+            
+            allSamples.forEach(sample => {
+                for(let i=0; i < numFeatures; i++) {
+                    averagedFeatures[i] += sample[i];
+                }
+            });
+            
+            const finalFeatures = averagedFeatures.map(val => val / allSamples.length);
+            
+            const pt = state.calibPoints[state.calibIndex];
+            const target = [pt.x * canvasFish.width, pt.y * canvasFish.height];
+            
+            // 保存！
+            await IDB.save(STORE_CALIB, { gaze3d: finalFeatures, target: target });
+            
+            state.calibIndex++;
+            statusEl.textContent = `Point ${state.calibIndex}/9 完了`;
+        }
+    }
+
+    if (e.key === 't') runTraining();
+    if (e.key === 'c') startCalibration();
+    if (e.key === 's') takeSnapshot();
+});
+
+document.getElementById('btnStart').onclick = startCameras;
+document.getElementById('btnCalibStart').onclick = startCalibration;
+document.getElementById('btnTrain').onclick = runTraining;
+document.getElementById('btnSaveSnap').onclick = takeSnapshot;
+document.getElementById('btnClear').onclick = async () => {
+    if(confirm("全データを削除しますか？")) { await IDB.clearAll(); state.model = null; statusEl.textContent = "データ削除完了"; }
+};
+
+function startCalibration() {
+    state.isCalibrating = true;
+    state.calibIndex = 0;
+    IDB.clearAll().then(() => statusEl.textContent = "キャリブレーション開始");
+}
+
+async function runTraining() {
+    const data = await IDB.getAll(STORE_CALIB);
+    if (data.length < 9) { alert("データ不足"); return; }
+    
+    const model = trainModel(data);
+    if (model) {
+        state.model = model;
+        await IDB.save(STORE_MODEL, { name: "gaze_model", data: model });
+        statusEl.textContent = "学習完了";
+    } else {
+        alert("学習失敗");
+    }
+}
+
+async function takeSnapshot() {
+    // スナップショット保存
+    // canvasFish.toBlob は Canvasの内部解像度 (1920x1080) で画像を生成します！
+    const u_avg = state.gazeHistory.length > 0 ? state.gazeHistory[state.gazeHistory.length-1][0] : 0;
+    const v_avg = state.gazeHistory.length > 0 ? state.gazeHistory[state.gazeHistory.length-1][1] : 0;
+
+    const snapData = {
+        time: Date.now(),
+        gaze_2d_mean: [u_avg, v_avg],
+        image_blob: await new Promise(r => canvasFish.toBlob(r, 'image/png')) // 1080p画像
+    };
+    
+    await IDB.save(STORE_SNAPS, snapData);
+    statusEl.textContent = "高画質スナップショット保存完了(DB)";
+    console.log("Snapshot saved (1920x1080)");
+}
+
+navigator.mediaDevices.enumerateDevices().then(devices => {
+    const selFront = document.getElementById('selFrontCam');
+    const selFish = document.getElementById('selFishCam');
+    devices.filter(d => d.kind === 'videoinput').forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.deviceId;
+        opt.text = d.label || `Camera ${d.deviceId.substr(0,5)}`;
+        selFront.appendChild(opt.cloneNode(true));
+        selFish.appendChild(opt);
+    });
+});
+
+</script>
+</body>
+</html>
