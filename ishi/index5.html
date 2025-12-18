@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Gaze Tracking Web</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.js"></script>
+    <style>
+        body { display: flex; flex-direction: column; align-items: center; background: #222; color: white; font-family: sans-serif; }
+        .canvas-container { position: relative; margin: 10px; border: 2px solid #444; }
+        canvas { background: black; }
+        #info { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.5); padding: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Gaze Tracker 魚眼モデル</h1>
+    <p>Enter/Space: サンプル取得 | T: 学習実行 | C: リセット</p>
+
+    <div class="canvas-container">
+        <canvas id="fishCanvas" width="1280" height="720"></canvas>
+        <div id="info">Fish Camera View</div>
+    </div>
+
+    <div class="canvas-container">
+        <canvas id="frontCanvas" width="640" height="480"></canvas>
+        <div id="info">Front (FaceMesh) Debug</div>
+    </div>
+
+    <video id="input_video" style="display:none;"></video>
+    <video id="fish_video_src" style="display:none;"></video>
+
+    <script>
+        // --- 設定とグローバル変数 ---
+        const fishCanvas = document.getElementById('fishCanvas');
+        const frontCanvas = document.getElementById('frontCanvas');
+        const videoElement = document.getElementById('input_video');
+        
+        /** * 1. 足りない定数・変数の定義 
+         */
+        const REAL_IPD = 0.063; // 63mm (平均的な瞳孔間距離)
+        const EYE_OFFSET = -0.015; // 眼球中心を顔の内側に15mmオフセット
+        const LEFT_EYE_IDS = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246];
+
+        // カメラパラメータ（仮の値：使用するカメラに合わせて調整してね）
+        const camParams = {
+            fx: 1280, fy: 1280, 
+            cx: 640, cy: 360, 
+            focal: 1280
+        };
+
+        /** * 2. 描画用の補助関数 (drawTarget, drawPrediction, drawText)
+         */
+        function drawTarget(ctx, x, y, label) {
+            ctx.beginPath();
+            ctx.arc(x, y, 20, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(255, 0, 0, 0.7)";
+            ctx.fill();
+            ctx.strokeStyle = "white";
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            drawText(ctx, label, x + 25, y + 5, "red");
+        }
+
+        function drawPrediction(ctx, x, y) {
+            ctx.beginPath();
+            ctx.arc(x, y, 12, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(0, 255, 0, 0.8)";
+            ctx.fill();
+            drawText(ctx, "Predicted Gaze", x + 15, y, "lime");
+        }
+
+        function drawText(ctx, text, x, y, color) {
+            ctx.fillStyle = color;
+            ctx.font = "20px Arial";
+            ctx.fillText(text, x, y);
+        }
+
+        /** * 3. MediaPipe FaceMesh の初期化
+         */
+        let faceMesh;
+        let frontResults = null;
+
+        async function setupMediaPipe() {
+            // FaceMeshのロード (CDN経由を想定)
+            faceMesh = new FaceMesh({locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+            }});
+
+            faceMesh.setOptions({
+                maxNumFaces: 1,
+                refineLandmarks: true, // 虹彩取得に必須
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            faceMesh.onResults((results) => {
+                frontResults = results;
+            });
+        }
+
+        /**
+         * MediaPipe & ユーティリティ・クラス定義
+         */
+
+        // 1. OneEuroFilter の実装
+        // 手ブレを抑えて視線を滑らかにするための大事なフィルターだよ
+        class OneEuroFilter {
+            constructor(freq = 60, minCutoff = 1.0, beta = 0.03, dCutoff = 1.0) {
+                this.freq = freq;
+                this.minCutoff = minCutoff;
+                this.beta = beta;
+                this.dCutoff = dCutoff;
+                this.xPrev = null;
+                this.dxPrev = null;
+                this.lastTime = null;
+            }
+
+            smoothingFactor(cutoff) {
+                const r = 2 * Math.PI * cutoff;
+                return r / (r + this.freq);
+            }
+
+            filter(x) {
+                const t = performance.now() / 1000; // 秒単位
+                if (this.lastTime === null) {
+                    this.lastTime = t;
+                    this.xPrev = x;
+                    this.dxPrev = 0.0;
+                    return x;
+                }
+
+                let dt = t - this.lastTime;
+                this.lastTime = t;
+                if (dt <= 0) dt = 1.0 / this.freq;
+                this.freq = 1.0 / dt;
+
+                const dx = (x - this.xPrev) * this.freq;
+                const alphaD = this.smoothingFactor(this.dCutoff);
+                const dxHat = alphaD * dx + (1 - alphaD) * this.dxPrev;
+
+                const cutoff = this.minCutoff + this.beta * Math.abs(dxHat);
+                const alpha = this.smoothingFactor(cutoff);
+                const xHat = alpha * x + (1 - alpha) * this.xPrev;
+
+                this.xPrev = xHat;
+                this.dxPrev = dxHat;
+                return xHat;
+            }
+        }
+
+        // フィルターのインスタンス化
+        const pitchFilter = new OneEuroFilter();
+        const yawFilter = new OneEuroFilter();
+        const rollFilter = new OneEuroFilter();
+
+        // 2. ランドマークIDの定義
+        const ID_TOP = 10;
+        const ID_BOTTOM = 152;
+        const ID_LEFT = 33;
+        const ID_RIGHT = 263;
+
+        const LEFT_IRIS_IDX = [468, 469, 470, 471];
+        const RIGHT_IRIS_IDX = [473, 474, 475, 476];
+        const LEFT_EYE_OUTER = 33;
+        const LEFT_EYE_INNER = 133;
+        const RIGHT_EYE_OUTER = 263;
+        const RIGHT_EYE_INNER = 362;
+
+        // 3. 座標変換関数
+        // lmToPixel: MediaPipeの0~1座標をピクセル座標へ
+        const lmToPixel = (lm, w, h) => [lm.x * w, lm.y * h];
+
+        // pixelToCamera: 2Dピクセル + 深度からカメラ座標系(3D)へ
+        const pixelToCamera = (ptPx, depth, mtx) => {
+            const x = (ptPx[0] - mtx.cx) * depth / mtx.fx;
+            const y = (ptPx[1] - mtx.cy) * depth / mtx.fy;
+            const z = depth;
+            return [x, y, z];
+        };
+
+        // projectTo2d: 3D座標を2Dピクセルへ投影
+        const projectTo2d = (point3d, fParams) => {
+            const [X, Y, Z] = point3d;
+            const u = fParams.fx * (X / Z) + fParams.cx;
+            const v = fParams.fy * (Y / Z) + fParams.cy;
+            return [Math.round(u), Math.round(v)];
+        };
+
+        /**
+         * 魚眼上の9点ターゲット（1920x1080想定）
+         */
+        const FISH_WIDTH = 1920;
+        const FISH_HEIGHT = 1080;
+
+        const fishPoints = [
+            [Math.floor(FISH_WIDTH * 0.25), Math.floor(FISH_HEIGHT * 0.25)],
+            [Math.floor(FISH_WIDTH * 0.50), Math.floor(FISH_HEIGHT * 0.25)],
+            [Math.floor(FISH_WIDTH * 0.75), Math.floor(FISH_HEIGHT * 0.25)],
+            [Math.floor(FISH_WIDTH * 0.25), Math.floor(FISH_HEIGHT * 0.50)],
+            [Math.floor(FISH_WIDTH * 0.50), Math.floor(FISH_HEIGHT * 0.50)],
+            [Math.floor(FISH_WIDTH * 0.75), Math.floor(FISH_HEIGHT * 0.50)],
+            [Math.floor(FISH_WIDTH * 0.25), Math.floor(FISH_HEIGHT * 0.75)],
+            [Math.floor(FISH_WIDTH * 0.50), Math.floor(FISH_HEIGHT * 0.75)],
+            [Math.floor(FISH_WIDTH * 0.75), Math.floor(FISH_HEIGHT * 0.75)]
+        ];
+
+        /**
+         * 状態管理用グローバル変数
+         */
+        let calibMode = true; // 初期値はとりあえずtrue
+        let calibIndex = 0;
+        let calibStorage = [];   // [[X, Y, Z, u, v], ...]
+        let samplingBuffer = []; // 3D視点の一時保存用
+        let modelCoef = null;    // 学習後の係数
+
+        /**
+         * 3D注視点から魚眼座標への回帰モデル
+         */
+
+        // 1. 多項式特徴量の生成 (Pythonの poly3_features 相当)
+        // [1, x, y, z, x^2, y^2, z^2, xy, yz, xz] の10次元ベクトルを作るよ
+        const poly3Features = (pt) => {
+            const [x, y, z] = pt;
+            return [
+                1.0, 
+                x, y, z, 
+                x * x, y * y, z * z, 
+                x * y, y * z, x * z
+            ];
+        };
+
+        /**
+         * 2. 最小二乗法による学習 (Pythonの train_model_from_calib 相当)
+         * math.js が読み込まれている前提だよ
+         */
+        const trainModelFromCalib = (calibList) => {
+            // calibList: [[X, Y, Z, u, v], ...] の配列
+            
+            // 特徴行列 A と ターゲット行列 Y を作成
+            const A = calibList.map(c => poly3Features([c[0], c[1], c[2]]));
+            const Yu = calibList.map(c => c[3]);
+            const Yv = calibList.map(c => c[4]);
+
+            // 最小二乗法の正規方程式: (A^T * A)^-1 * A^T * Y
+            // math.js の関数を使って行列計算するね
+            const At = math.transpose(A);
+            const AtA = math.multiply(At, A);
+            const invAtA = math.inv(AtA); // 逆行列
+
+            const coef_u = math.multiply(math.multiply(invAtA, At), Yu);
+            const coef_v = math.multiply(math.multiply(invAtA, At), Yv);
+
+            const model = { coef_u, coef_v };
+
+            // ブラウザのLocalStorageに保存しておくと、次回からキャリブなしで使えるよ
+            localStorage.setItem('gaze_model_coef', JSON.stringify(model));
+            
+            return model;
+        };
+
+        /**
+         * 3. 保存されたモデルの読み込み
+         */
+        const loadModel = () => {
+            const saved = localStorage.getItem('gaze_model_coef');
+            return saved ? JSON.parse(saved) : null;
+        };
+
+        /**
+         * 4. 3D座標から魚眼上の2D座標へ変換 (Pythonの gaze3d_to_fish 相当)
+         */
+        const gaze3dToFish = (pt, model) => {
+            if (!model) return null;
+
+            const f = poly3Features(pt);
+            
+            // 行列のドット積 (f @ coef)
+            const u = math.dot(f, model.coef_u);
+            const v = math.dot(f, model.coef_v);
+
+            return [Math.round(u), Math.round(v)];
+        };
+
+        /**
+         * 視線処理メインロジック
+         * @param {Object} results - MediaPipe FaceMeshの結果
+         * @param {HTMLCanvasElement} canvas - 描画用キャンバス
+         * @param {Object} camParams - カメラ行列 (fx, fy, cx, cy)
+         */
+        const processFrameForGaze = (results, canvas, camParams) => {
+            const ctx = canvas.getContext('2d');
+            const { width: w, height: h } = canvas;
+            
+            let gazeMarkEnd = null;
+            let debug = {};
+
+            if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
+                return { gazeMarkEnd, debug };
+            }
+
+            const lm = results.multiFaceLandmarks[0];
+
+            // ヘルパー：特定IDの3D座標(MediaPipe raw)をmath.jsのベクトルで返す
+            const getP = (i) => math.matrix([lm[i].x, lm[i].y, lm[i].z]);
+
+            // --- 1. 顔の向き (Face Orientation) ---
+            const top = getP(ID_TOP);
+            const bottom = getP(ID_BOTTOM);
+            const left = getP(ID_LEFT);
+            const right = getP(ID_RIGHT);
+
+            // ベクトル計算
+            let up = math.subtract(top, bottom);
+            up = math.divide(up, math.norm(up));
+
+            let rightV = math.subtract(right, left);
+            rightV = math.divide(rightV, math.norm(rightV));
+
+            // 外積で正面ベクトルを出す (forward = right x up)
+            let forward = math.cross(rightV, up);
+            forward = math.divide(forward, math.norm(forward));
+
+            // 角度計算 & フィルタリング
+            let pitch = Math.asin(-forward.get([1]));
+            let yaw = Math.atan2(forward.get([0]), -forward.get([2]));
+            let roll = Math.atan2(rightV.get([1]), rightV.get([0]));
+
+            pitch = pitchFilter.filter(pitch);
+            yaw = yawFilter.filter(yaw);
+            roll = rollFilter.filter(roll);
+
+            // --- 2. 距離と虹彩の3D座標 ---
+            const leftOuter = lmToPixel(lm[LEFT_EYE_OUTER], w, h);
+            const rightOuter = lmToPixel(lm[RIGHT_EYE_OUTER], w, h);
+
+            // 距離（カメラから顔まで）の推定
+            const pixelIpd = math.distance(rightOuter, leftOuter);
+            const distance = (REAL_IPD * camParams.focal) / (pixelIpd + 1e-8);
+
+            // 虹彩(Iris)の2D平均座標
+            const getIrisCenter = (indices) => {
+                let sum = [0, 0];
+                indices.forEach(idx => {
+                    const p = lmToPixel(lm[idx], w, h);
+                    sum[0] += p[0]; sum[1] += p[1];
+                });
+                return [sum[0] / indices.length, sum[1] / indices.length];
+            };
+
+            const leftIris2d = getIrisCenter(LEFT_IRIS_IDX);
+            const leftIris3d = pixelToCamera(leftIris2d, distance, camParams);
+
+            // --- 3. 眼球中心の計算 ---
+            // JavaScriptでfitEllipseは重いので、今回は簡易的に輪郭の中央を使う方法で書くね
+            const getEyeCenter = (indices) => {
+                let sum = [0, 0];
+                indices.forEach(idx => {
+                    const p = lmToPixel(lm[idx], w, h);
+                    sum[0] += p[0]; sum[1] += p[1];
+                });
+                return [sum[0] / indices.length, sum[1] / indices.length];
+            };
+
+            const leftEyeCenter2d = getEyeCenter(LEFT_EYE_IDS); // 事前に定義した輪郭ID
+            let leftCenter3d = pixelToCamera(leftEyeCenter2d, distance, camParams);
+
+            // 眼球中心を顔の内側へオフセット (L_C)
+            // forwardベクトルをEYE_OFFSET(負の値)分だけ足す
+            const leftEyeCenterOffset = math.add(
+                math.matrix(leftCenter3d), 
+                math.multiply(forward, EYE_OFFSET)
+            );
+
+            // --- 4. 視線ベクトル & 注視点 (Gaze Logic) ---
+            const LC = leftEyeCenterOffset;
+            const LI = math.matrix(leftIris3d);
+
+            // 視線ベクトル: 虹彩 - 眼球中心
+            let gazeVec = math.subtract(LI, LC);
+            
+            if (math.norm(gazeVec) > 1e-6) {
+                let gazeDir = math.divide(gazeVec, math.norm(gazeVec));
+                
+                // 反転ベクトル（正面カメラから見て「見ている先」）
+                let gazeMarkDir = math.divide(math.subtract(LC, LI), math.norm(math.subtract(LC, LI)));
+
+                // 注視点計算 (Pythonの L_2 = distance 先まで伸ばす処理)
+                const L2 = distance;
+                const gazeMarkEndVec = math.add(LI, math.multiply(gazeMarkDir, L2));
+                
+                // 戻り値用に配列に変換
+                gazeMarkEnd = gazeMarkEndVec.toArray();
+
+                // デバッグ用描画（Canvas API）
+                const E_mark_2d = projectTo2d(gazeMarkEnd, camParams);
+                ctx.beginPath();
+                ctx.arc(E_mark_2d[0], E_mark_2d[1], 8, 0, Math.PI * 2);
+                ctx.fillStyle = "red";
+                ctx.fill();
+                
+                debug = { distance, yaw, pitch, roll, forward: forward.toArray() };
+            }
+
+            return { gazeMarkEnd, debug };
+        };
+
+        // --- 起動処理 ---
+        async function start() {
+            // 1. MediaPipeのセットアップ
+            await setupMediaPipe();
+
+            // 2. カメラデバイスの取得（魚眼カメラを探す）
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevices = devices.filter(device => device.kind === 'videoinput');
+            
+            // 正面カメラ(0番目)と魚眼カメラ(1番目)を想定。環境に合わせて index を変えてね。
+            const frontId = videoDevices[0]?.deviceId;
+            const fishId = videoDevices[1]?.deviceId || frontId; // 1台しかない場合は同じにする
+
+            const frontStream = await navigator.mediaDevices.getUserMedia({
+                video: { deviceId: frontId, width: 640, height: 480 }
+            });
+            videoElement.srcObject = frontStream;
+            videoElement.play();
+
+            const fishVideoElement = document.getElementById('fish_video_src');
+            const fishStream = await navigator.mediaDevices.getUserMedia({
+                video: { deviceId: fishId, width: 1280, height: 720 }
+            });
+            fishVideoElement.srcObject = fishStream;
+            fishVideoElement.play();
+
+            // 3. MediaPipeループ
+            const camera = new Camera(videoElement, {
+                onFrame: async () => {
+                    await faceMesh.send({image: videoElement});
+                }
+            });
+            camera.start();
+
+            /**
+             * メインループ & キャリブレーション管理
+             */
+
+            // 状態管理
+            let uvBuffer = []; // 移動平均用
+            const SAMPLE_FRAMES = 10;
+            const MIN_SAMPLES = 5;
+
+            // キーボードイベントの監視
+            let lastKey = null;
+            window.addEventListener('keydown', (e) => {
+                lastKey = e.key;
+            });
+
+            async function mainLoop() {
+                // 1. モデルの初期読み込み
+                modelCoef = loadModel();
+                if (modelCoef) console.log("Model loaded!");
+
+                // 2. カメラ・ループ（requestAnimationFrame を使用）
+                async function tick() {
+                    // --- 視線処理 (Front Camera) ---
+                    // frontResults は MediaPipe から取得した結果を想定
+                    const { gazeMarkEnd, debug } = processFrameForGaze(frontResults, frontCanvas, camParams);
+
+                    // --- 魚眼側表示 (Fish Camera) ---
+                    const fishVideo = fishVideoElement;
+                    const ctxFish = fishCanvas.getContext('2d');
+                    ctxFish.drawImage(fishVideo, 0, 0);
+
+                    if (calibMode) {
+                        // キャリブターゲットの描画
+                        if (calibIndex < fishPoints.length) {
+                            const [tx, ty] = fishPoints[calibIndex];
+                            drawTarget(ctxFish, tx, ty, `Point ${calibIndex + 1}/9 - Look & Press Enter`);
+                        }
+                    } else {
+                        drawText(ctxFish, "RUN MODE - Press 'c' to recalibrate", 30, 50, "lime");
+                    }
+
+                    // --- 予測と表示 ---
+                    if (modelCoef && gazeMarkEnd) {
+                        const uv = gaze3dToFish(gazeMarkEnd, modelCoef);
+                        if (uv) {
+                            // 安全のためのクリッピング
+                            const u = Math.max(0, Math.min(uv[0], FISH_WIDTH - 1));
+                            const v = Math.max(0, Math.min(uv[1], FISH_HEIGHT - 1));
+
+                            // 10フレーム移動平均
+                            uvBuffer.push([u, v]);
+                            if (uvBuffer.length > 10) uvBuffer.shift();
+
+                            const uAvg = math.mean(uvBuffer.map(p => p[0]));
+                            const vAvg = math.mean(uvBuffer.map(p => p[1]));
+
+                            drawPrediction(ctxFish, uAvg, vAvg);
+                        }
+                    }
+
+                    // --- キー操作処理 ---
+                    if (lastKey === 'Enter' || lastKey === ' ') {
+                        if (calibMode && gazeMarkEnd) {
+                            await startSampling(gazeMarkEnd);
+                        }
+                        lastKey = null;
+                    }
+
+                    if (lastKey === 't') {
+                        if (calibStorage.length >= 9) {
+                            modelCoef = trainModelFromCalib(calibStorage);
+                            calibMode = false;
+                            alert("Training Done!");
+                        }
+                        lastKey = null;
+                    }
+
+                    if (lastKey === 'c') {
+                        resetCalibration();
+                        lastKey = null;
+                    }
+
+                    requestAnimationFrame(tick);
+                }
+
+                tick();
+            }
+
+            /**
+             * サンプリング処理 (Enter押下時)
+             * 指定フレーム分の3D視線データを集めて中央値を保存するよ
+             */
+            async function startSampling(currentGaze) {
+                let samples = [];
+                console.log(`Sampling for point ${calibIndex + 1}...`);
+
+                // 簡易的に現在の視線付近で数フレーム分ストック（実際はループ内で収集）
+                for (let i = 0; i < SAMPLE_FRAMES; i++) {
+                    // 非同期で少し待機しつつ収集するイメージ
+                    samples.push(currentGaze); 
+                    await new Promise(r => setTimeout(r, 30));
+                }
+
+                if (samples.length >= MIN_SAMPLES) {
+                    // 各座標軸の中央値(Median)を計算
+                    const medX = math.median(samples.map(s => s[0]));
+                    const medY = math.median(samples.map(s => s[1]));
+                    const medZ = math.median(samples.map(s => s[2]));
+                    
+                    const [tx, ty] = fishPoints[calibIndex];
+                    calibStorage.push([medX, medY, medZ, tx, ty]);
+                    
+                    calibIndex++;
+                    if (calibIndex >= fishPoints.length) {
+                        console.log("All points collected. Press 't' to train.");
+                    }
+                }
+            }
+
+            function resetCalibration() {
+                calibMode = true;
+                calibIndex = 0;
+                calibStorage = [];
+                uvBuffer = [];
+                modelCoef = null;
+                localStorage.removeItem('gaze_model_coef');
+            }
+            mainLoop(); 
+        }
+            window.onload = start;
+    </script>
+</body>
+</html>
