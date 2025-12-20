@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ブレインストーミング図メーカー（ChatGPT API対応・樹形記録）</title>
+  <style>
+    :root{
+      --bg:#fffbf0;
+      --panel:#ffffff;
+      --accent:#ff6b6b;
+      --muted:#6b6b6b;
+      --node:#ffd166;
+      --node-stroke:#ffa94d;
+      --text:#1f2937;
+    }
+    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Hiragino Kaku Gothic ProN',Meiryo,sans-serif;background:var(--bg);color:var(--text)}
+    .app{display:grid;grid-template-columns:1fr 360px;gap:12px;height:100vh;padding:16px;box-sizing:border-box}
+    .canvas{background:linear-gradient(180deg,#fff 0%, #fff0 60%);border-radius:12px;padding:12px;box-shadow:0 8px 20px rgba(17,24,39,0.06);position:relative;overflow:hidden}
+    .controls{display:flex;gap:8px;align-items:center}
+    input[type="text"]{padding:8px;border-radius:8px;border:1px solid #eee;font-size:14px}
+    button{background:var(--accent);color:white;border:none;padding:8px 12px;border-radius:10px;cursor:pointer}
+    button.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+    #graph{width:100%;height:calc(100% - 64px);border-radius:8px;background:transparent}
+    .sidebar{background:var(--panel);border-radius:12px;padding:12px;box-shadow:0 8px 20px rgba(17,24,39,0.04);overflow:auto}
+    .sidebar h3{margin-top:0}
+    .node-list{display:flex;flex-direction:column;gap:6px}
+    .node-card{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:8px;background:linear-gradient(180deg,#fff,#fffafa);border:1px solid #f3f3f3}
+    .small{font-size:12px;color:var(--muted)}
+    footer{position:absolute;left:12px;bottom:12px;background:rgba(255,255,255,0.7);padding:8px;border-radius:8px}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="canvas">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h2 style="margin:6px 0">ブレインストーミング図メーカー</h2>
+        <div class="controls">
+          <input id="seedInput" type="text" placeholder="例: 音楽, 旅行, 学習" style="width:260px" />
+          <button id="addSeedBtn">生成</button>
+          <button id="autoAiBtn" class="ghost">AI連想追加</button>
+        </div>
+      </div>
+
+      <svg id="graph"></svg>
+
+      <footer>
+        <button id="exportJson">JSON エクスポート</button>
+        <button id="exportPng" class="ghost">PNG 保存</button>
+      </footer>
+    </div>
+
+    <aside class="sidebar">
+      <h3>ノード説明</h3>
+      <div id="nodeDesc" style="white-space:pre-wrap;font-size:14px;margin-bottom:16px;color:#333">ノードをドラッグして離すと説明が表示されます</div>
+      <h3>ノード一覧</h3>
+      <div class="node-list" id="nodeList"></div>
+    </aside>
+  </div>
+
+  <!-- D3 -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+
+  <script>
+    // ----- プログラム全体 -----
+    let nodes = [];
+    let links = [];
+    let idCounter = 0;
+
+    const svg = d3.select('#graph');
+    const width = () => document.querySelector('.canvas').clientWidth - 24;
+    const height = () => document.querySelector('.canvas').clientHeight - 90;
+    svg.attr('width', width()).attr('height', height());
+
+    const simulation = d3.forceSimulation()
+      .force('link', d3.forceLink().id(d=>d.id).distance(80).strength(0.5))
+      .force('charge', d3.forceManyBody().strength(-200))
+      .force('center', d3.forceCenter(width()/2, height()/2))
+      .on('tick', ticked);
+
+    const linkG = svg.append('g').attr('class','links');
+    const nodeG = svg.append('g').attr('class','nodes');
+
+    const defs = svg.append('defs');
+    const grad = defs.append('linearGradient').attr('id','grad').attr('x1','0%').attr('x2','100%');
+    grad.append('stop').attr('offset','0%').attr('stop-color','#ffd166');
+    grad.append('stop').attr('offset','100%').attr('stop-color','#ffb6a5');
+
+    function restart(){
+      // LINKS
+      const link = linkG.selectAll('line').data(links, d=>d.id);
+      link.exit().remove();
+      link.enter().append('line').attr('stroke-width',1).attr('stroke','#ffb6a5').attr('opacity',0.8).merge(link);
+
+      // NODES
+      const node = nodeG.selectAll('g').data(nodes, d=>d.id);
+      node.exit().remove();
+
+      const nodeEnter = node.enter().append('g')
+        .call(d3.drag()
+          .on('start', dragstarted)
+          .on('drag', dragged)
+          .on('end', dragended)
+        );
+
+      nodeEnter.append('circle')
+        .attr('r', d=>d.size||18)
+        .attr('fill','url(#grad)')
+        .attr('stroke','#ff7b55')
+        .attr('stroke-width',2)
+        .on('dblclick', async (e,d)=>{
+          // ダブルクリック — このノードを中心にAI連想を作成
+          if(d.childrenCount >= 10){ alert('このノードは既に最大派生数に達しています'); return; }
+          const words = await fetchAssociations(d.name);
+          words.forEach(w=>{ if(d.childrenCount < 10) addNode(w, d.id); });
+        });
+
+      nodeEnter.append('text')
+        .attr('dy',4)
+        .attr('text-anchor','middle')
+        .attr('pointer-events','none')
+        .style('font-size','12px')
+        .text(d=>d.name);
+
+      node.merge(nodeEnter).select('circle').attr('r', d=>d.size||18);
+      node.merge(nodeEnter).select('text').text(d=>d.name);
+
+      simulation.nodes(nodes);
+      simulation.force('link').links(links);
+      simulation.alpha(0.6).restart();
+
+      updateSidebar();
+    }
+
+    function ticked(){
+      nodeG.selectAll('g').attr('transform', d=>`translate(${d.x},${d.y})`);
+      linkG.selectAll('line').attr('x1', d=>d.source.x).attr('y1', d=>d.source.y).attr('x2', d=>d.target.x).attr('y2', d=>d.target.y);
+    }
+
+    function dragstarted(event,d){
+      if(!event.active) simulation.alphaTarget(0.3).restart();
+      d.fx = d.x; d.fy = d.y;
+    }
+    function dragged(event,d){
+      d.fx = event.x; d.fy = event.y;
+    }
+    function dragended(event,d){
+      if(!event.active) simulation.alphaTarget(0);
+      // 固定を解除して自然な挙動にしつつ、説明を表示
+      d.fx = null; d.fy = null;
+      // サイドバーに説明を表示（非同期呼び出し）
+      showDescription(d);
+    }
+
+    function makeId(){ return 'n' + (++idCounter); }
+
+    function addNode(name, parentId=null){
+      const node = { id: makeId(), name: name, size:18, parentId: parentId, childrenCount:0 };
+      nodes.push(node);
+      if(parentId){ const parentNode = findNodeById(parentId); if(parentNode){ addLink(parentNode, node); parentNode.childrenCount++; } }
+      restart();
+      return node;
+    }
+
+    function addLink(a,b){
+      // a,b are node objects
+      links.push({ id: 'l' + links.length, source: a, target: b });
+      restart();
+    }
+
+    function findNodeById(id){ return nodes.find(n=>n.id===id); }
+    function findNodeByName(name){ return nodes.find(n=>n.name===name); }
+
+    function updateSidebar(){
+      const list = document.getElementById('nodeList');
+      list.innerHTML = '';
+      nodes.forEach(n=>{
+        const div = document.createElement('div'); div.className = 'node-card';
+        const left = document.createElement('div'); left.innerHTML = `<strong>${escapeHtml(n.name)}</strong><div class='small'>ID:${n.id} 親:${n.parentId||'-'}</div>`;
+        const right = document.createElement('div');
+        const btnDel = document.createElement('button'); btnDel.textContent = '×'; btnDel.onclick = ()=>{ deleteNode(n.id); };
+        right.appendChild(btnDel);
+        div.appendChild(left); div.appendChild(right); list.appendChild(div);
+      });
+    }
+
+    function deleteNode(id){
+      nodes = nodes.filter(n=>n.id!==id);
+      links = links.filter(l=>l.source.id!==id && l.target.id!==id);
+      restart();
+    }
+
+    function escapeHtml(s){
+      return String(s).replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    }
+
+    // --- UI イベント ---
+    document.getElementById('addSeedBtn').addEventListener('click', ()=>{
+      const val = document.getElementById('seedInput').value.trim();
+      if(!val) return alert('単語を入力してください');
+      const parts = val.split(/[ ,、。；;]+/).map(s=>s.trim()).filter(Boolean);
+      parts.forEach(p=>addNode(p));
+    });
+
+    document.getElementById('autoAiBtn').addEventListener('click', async ()=>{
+      const seed = document.getElementById('seedInput').value.trim();
+      if(!seed) return;
+      const baseNode = findNodeByName(seed) || addNode(seed);
+      if(baseNode.childrenCount >= 10){ alert('このノードは既に最大派生数に達しています'); return; }
+      const words = await fetchAssociations(baseNode.name);
+      words.forEach(w=>{ if(baseNode.childrenCount < 10) addNode(w, baseNode.id); });
+    });
+
+    /* ============================================================
+   ✅ API 呼び出し専用モジュール（dr-cube-1 リレー対応）
+============================================================ */
+
+const API_URL = "https://dr-cube-1.onrender.com/chat";
+
+/*** ✅ 連想語を取得（最大10語）*/
+async function fetchWords(word, count = 10) {
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: `「${word}」から連想される短い単語を${count}個、日本語で出してください。出力は単語のみ。`
+      })
+    });
+
+    const json = await res.json();
+    const text = json.reply || json.message || json.text || "";
+
+    return String(text)
+      .split(/[,\u3001\n]+/)
+      .map(s => s.trim())
+      .filter(Boolean)
+      .slice(0, count);
+
+  } catch (err) {
+    console.error("fetchWords error", err);
+    return [];
+  }
+}
+
+/*** ✅ 概念の説明文を取得（50〜120字）*/
+async function fetchConceptDescription(word) {
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: `「${word}」という概念について、50〜120字で簡潔に説明してください。`
+      })
+    });
+
+    const json = await res.json();
+    return (json.reply || json.message || json.text || "").trim();
+
+  } catch (err) {
+    console.error("fetchConceptDescription error", err);
+    return "説明取得に失敗しました";
+  }
+}
+
+/* ============================================================
+   ✅ 不足していた関数を追加（これで整合性が取れる）
+============================================================ */
+
+// ✅ AI連想語生成
+async function fetchAssociations(word) {
+  return await fetchWords(word, 10);
+}
+
+// ✅ ノード説明生成
+async function fetchNodeInfo(word) {
+  return await fetchConceptDescription(word);
+}
+    // ----- サイドバーに説明表示 -----
+    function showDescription(n){
+      const box = document.getElementById('nodeDesc');
+      box.textContent = `【${n.name}】\nID: ${n.id}\n親: ${n.parentId||'-'}\n\n説明生成中...`;
+      // 非同期で説明を取得して差し替え
+      fetchNodeInfo(n.name).then(text => {
+        box.textContent = `【${n.name}】\n\n${text}`;
+      });
+    }
+
+    // 初期ノード
+    addNode('アイデア');
+
+    // リサイズ対応
+    window.addEventListener('resize', ()=>{ svg.attr('width', width()).attr('height', height()); simulation.force('center', d3.forceCenter(width()/2, height()/2)); simulation.alpha(0.3).restart(); });
+
+    // エクスポート機能（簡易）
+    document.getElementById('exportJson').addEventListener('click', ()=>{
+      const data = { nodes: nodes.map(n=>({id:n.id,name:n.name,parentId:n.parentId,childrenCount:n.childrenCount})), links: links.map(l=>({source:l.source.id,target:l.target.id})) };
+      const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+      const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'brainstorm.json'; a.click(); URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('exportPng').addEventListener('click', ()=>{
+      const serializer = new XMLSerializer(); const svgNode = document.querySelector('#graph'); const clone = svgNode.cloneNode(true);
+      clone.setAttribute('xmlns','http://www.w3.org/2000/svg'); clone.setAttribute('width', width()); clone.setAttribute('height', height());
+      const svgStr = serializer.serializeToString(clone);
+      const img = new Image(); const blob = new Blob([svgStr], {type:'image/svg+xml;charset=utf-8'}); const url = URL.createObjectURL(blob);
+      img.onload = function(){ const canvas = document.createElement('canvas'); canvas.width = width(); canvas.height = height(); const ctx = canvas.getContext('2d'); ctx.fillStyle = getComputedStyle(document.body).backgroundColor; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.drawImage(img,0,0); const a = document.createElement('a'); a.href = canvas.toDataURL('image/png'); a.download = 'brainstorm.png'; a.click(); URL.revokeObjectURL(url); };
+      img.src = url;
+    });
+
+  </script>
+</body>
+</html>
