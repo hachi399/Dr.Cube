@@ -734,7 +734,7 @@ async function saveSnapshotFromCanvas(sourceCanvas, sx, sy, sw, sh) {
         sourceCanvas,
         sx, sy, sw, sh,
         0, 0, sw, sh
-    );
+    );  
 
     const croppedData = tempCanvas.toDataURL("image/jpeg");
 
@@ -787,13 +787,12 @@ function updateEditCanvas() {
     ctxEdit.drawImage(editImageData, sx, sy, viewW, viewH, 0, 0, w, h);
 
     // 注視点(赤丸)をキャンバス上の相対座標に変換して描画
-    const rx = (editGazeUV[0] - sx) * (w / viewW);
-    const ry = (editGazeUV[1] - sy) * (h / viewH);
-    
-    ctxEdit.fillStyle = "red";
-    ctxEdit.shadowBlur = 5; ctxEdit.shadowColor = "white"; // 見やすく
-    ctxEdit.beginPath(); ctxEdit.arc(rx, ry, 6, 0, Math.PI*2); ctxEdit.fill();
-    ctxEdit.shadowBlur = 0;
+    //const rx = (editGazeUV[0] - sx) * (w / viewW);
+    //const ry = (editGazeUV[1] - sy) * (h / viewH);
+    //ctxEdit.fillStyle = "red";
+    //ctxEdit.shadowBlur = 5; ctxEdit.shadowColor = "white"; // 見やすく
+    //ctxEdit.beginPath(); ctxEdit.arc(rx, ry, 6, 0, Math.PI*2); ctxEdit.fill();
+    //ctxEdit.shadowBlur = 0;
 }
 
 // JSONファイル として保存
@@ -935,44 +934,6 @@ window.onload = async () => {
     document.getElementById('btn-right').onclick = () => { offsetUV[0] += 20/zoomLevel; updateEditCanvas(); };
 
     // --- 保存・キャンセル ---
-    /**document.getElementById('btn-save-crop').onclick = async () => {
-        if(cropRect.w < 10 || cropRect.h < 10) { alert("マウスで切り抜く範囲をドラッグして選んでね"); return; }
-        
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = cropRect.w;
-        tempCanvas.height = cropRect.h;
-        const tCtx = tempCanvas.getContext('2d');
-        // canvasEditの表示内容をそのまま切り抜く
-        tCtx.drawImage(canvasEdit, cropRect.x, cropRect.y, cropRect.w, cropRect.h, 0, 0, cropRect.w, cropRect.h);
-        
-        //const croppedData = tempCanvas.toDataURL("image/jpeg");
-        const croppedData = tempCanvas.toDataURL("image/jpeg");
-
-        const snapshotData = {
-            time: Date.now(),
-            gaze_uv: editGazeUV,
-            full_image: editImageData.src,
-            cropped_image: croppedData
-        };
-
-        // 🔍 ログ出力
-        console.log("📸 Saving snapshot:", snapshotData);
-        console.log("  time:", new Date(snapshotData.time).toLocaleString());
-        console.log("  gaze_uv:", snapshotData.gaze_uv);
-        console.log("  full_image size:", snapshotData.full_image.length);
-        console.log("  cropped_image size:", snapshotData.cropped_image.length);
-
-        // IndexedDB に保存
-        await db.saveSnapshot(snapshotData);
-        downloadSnapshotAsJSON(snapshotData);
-
-        alert("画像を保存しました！");
-        document.getElementById('edit-panel').style.display = 'none';
-        document.getElementById('crop-guide').style.display = 'none';
-        
-    };
-    **/
-
     document.getElementById('btn-save-crop').onclick = async () => {
         if (cropRect.w > 10 && cropRect.h > 10) return; // ← 追加
 
