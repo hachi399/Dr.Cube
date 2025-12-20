@@ -746,6 +746,7 @@ window.onload = async () => {
             const snap = {
                 time: timestamp,
                 gaze_2d_mean: uv,
+                fish_image: canvasFish.toDataURL("image/jpeg"),
                 note: "Snapshot via Web"
             };
             await db.saveSnapshot(snap);
