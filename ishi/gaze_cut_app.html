@@ -60,6 +60,30 @@
         <h4>Calibration Data / Snapshots</h4>
         <pre id="data-log" style="font-size:12px; max-height:300px; overflow-y:auto; color:#ccffcc;"></pre>
     </div>
+
+    <div id="edit-panel" style="display:none; background:#333; padding:20px; border-radius:8px; margin-top:20px; border: 2px solid #ff7eb3;">
+        <h3>Snapshot Editor</h3>
+        <div style="display:flex; gap:20px;">
+            <div style="position:relative;">
+                <canvas id="canvas-edit" style="border:1px solid #fff; cursor:crosshair;"></canvas>
+                <div id="crop-guide" style="position:absolute; border:2px dashed lime; pointer-events:none; display:none;"></div>
+            </div>
+            <div class="edit-controls" style="display:flex; flex-direction:column; gap:10px;">
+                <p>注視点: <span id="edit-gaze-pos"></span></p>
+                <button class="secondary" id="btn-zoom-in">拡大 (+)</button>
+                <button class="secondary" id="btn-zoom-out">縮小 (-)</button>
+                <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:5px;">
+                    <span></span><button class="secondary" id="btn-up">↑</button><span></span>
+                    <button class="secondary" id="btn-left">←</button><span></span><button class="secondary" id="btn-right">→</button>
+                    <span></span><button class="secondary" id="btn-down">↓</button><span></span>
+                </div>
+                <hr>
+                <button class="primary" id="btn-save-crop">選択範囲を保存</button>
+                <button class="secondary" id="btn-cancel-edit">キャンセル</button>
+            </div>
+        </div>
+    </div>
+
     <div class="status" id="status-fish">Ready.</div>
   </div>
 </div>
@@ -162,6 +186,7 @@ class StorageDB {
         tx.objectStore("model").clear();
         tx.objectStore("snapshots").clear();
     }
+    
 }
 
 // ==========================================
@@ -681,6 +706,113 @@ async function finishSampling() {
     }
 }
 
+// 生画像の取得
+function captureRawFishImage(video) {
+    const c = document.createElement("canvas");
+    c.width  = video.videoWidth;
+    c.height = video.videoHeight;
+    const ctx = c.getContext("2d");
+
+    // ★ 生のフレームだけを描画
+    ctx.drawImage(video, 0, 0, c.width, c.height);
+
+    return c.toDataURL("image/jpeg");
+}
+
+
+/* ===============================
+   編集・スナップショット関連
+   =============================== */
+
+async function saveSnapshotFromCanvas(sourceCanvas, sx, sy, sw, sh) {
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = sw;
+    tempCanvas.height = sh;
+    const tCtx = tempCanvas.getContext('2d');
+
+    tCtx.drawImage(
+        sourceCanvas,
+        sx, sy, sw, sh,
+        0, 0, sw, sh
+    );
+
+    const croppedData = tempCanvas.toDataURL("image/jpeg");
+
+    const snapshotData = {
+        time: Date.now(),
+        gaze_uv: editGazeUV,
+        full_image: editImageData.src,
+        cropped_image: croppedData
+    };
+
+    console.log("📸 Saving snapshot:", snapshotData);
+
+    await db.saveSnapshot(snapshotData);
+    downloadSnapshotAsJSON(snapshotData);
+
+    alert("画像を保存しました！");
+    document.getElementById('edit-panel').style.display = 'none';
+    document.getElementById('crop-guide').style.display = 'none';
+}
+
+// --- 編集エディタ用のグローバル変数 ---
+let editImageData = null; 
+let editGazeUV = [0, 0];  
+let zoomLevel = 2.0;      
+let offsetUV = [0, 0];    
+let isDragging = false;
+let startPos = {x:0, y:0};
+let cropRect = {x:0, y:0, w:0, h:0};
+
+const canvasEdit = document.getElementById('canvas-edit');
+const ctxEdit = canvasEdit.getContext('2d');
+
+// --- エディタの描画更新関数 (window.onloadの外に置いてOK) ---
+function updateEditCanvas() {
+    if(!editImageData) return;
+    
+    const w = canvasEdit.width;
+    const h = canvasEdit.height;
+    ctxEdit.clearRect(0,0,w,h);
+
+    // 表示範囲の計算
+    const viewW = editImageData.width / zoomLevel;
+    const viewH = editImageData.height / zoomLevel;
+    
+    // 中心位置を「注視点 + 手動オフセット」にする
+    const sx = (editGazeUV[0] + offsetUV[0]) - viewW/2;
+    const sy = (editGazeUV[1] + offsetUV[1]) - viewH/2;
+
+    // 元画像から切り出してキャンバスいっぱいに描画
+    ctxEdit.drawImage(editImageData, sx, sy, viewW, viewH, 0, 0, w, h);
+
+    // 注視点(赤丸)をキャンバス上の相対座標に変換して描画
+    const rx = (editGazeUV[0] - sx) * (w / viewW);
+    const ry = (editGazeUV[1] - sy) * (h / viewH);
+    
+    ctxEdit.fillStyle = "red";
+    ctxEdit.shadowBlur = 5; ctxEdit.shadowColor = "white"; // 見やすく
+    ctxEdit.beginPath(); ctxEdit.arc(rx, ry, 6, 0, Math.PI*2); ctxEdit.fill();
+    ctxEdit.shadowBlur = 0;
+}
+
+// JSONファイル として保存
+function downloadSnapshotAsJSON(snapshotData) {
+    const blob = new Blob(
+        [JSON.stringify(snapshotData, null, 2)],
+        { type: "application/json" }
+    );
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `snapshot_${snapshotData.time}.json`;
+    a.click();
+
+    URL.revokeObjectURL(url);
+}
+
+
 // イベントリスナー
 window.onload = async () => {
     // カメラ列挙
@@ -706,6 +838,193 @@ window.onload = async () => {
         calibrationData = [];
         db.saveCalibData([]); // clear
     };
+
+    // --- スナップショットボタン ---
+    const triggerSnap = async () => {
+        // currentModelやsnapBufferのチェック
+        if(!currentModel) {
+             alert("学習を先に完了させてね"); 
+             console.warn("[Snap] aborted: model not trained");
+             return; 
+        }
+        if(snapBuffer.length < 1) { 
+            alert("視線を認識させてから押してね");
+            console.warn("[Snap] aborted: snapBuffer empty");
+            return; 
+        }
+        
+        let sum = [0,0,0];
+        for(let p of snapBuffer) { sum[0]+=p[0]; sum[1]+=p[1]; sum[2]+=p[2]; }
+        const mean3d = [sum[0]/snapBuffer.length, sum[1]/snapBuffer.length, sum[2]/snapBuffer.length];
+        const uv = gaze3d_to_fish(mean3d, currentModel);
+
+        if(uv) {
+            // --- 編集初期値 ---
+            editGazeUV = uv;
+            offsetUV = [0, 0];
+            zoomLevel = 2.0;
+            
+            // --- 画像取得 ---
+            //const dataUrl = canvasFish.toDataURL("image/jpeg");
+            const rawImageDataUrl = captureRawFishImage(videoFish);
+
+
+            // ======== ログ出力 ========
+            console.group("📸 Snapshot Triggered");
+            console.log("snapBuffer length:", snapBuffer.length);
+            console.log("mean3d:", mean3d.map(v => v.toFixed(4)));
+            console.log("gaze uv (fish):", `u=${uv[0]}, v=${uv[1]}`);
+            console.log("editGazeUV:", editGazeUV);
+            console.log("offsetUV:", offsetUV);
+            console.log("zoomLevel:", zoomLevel);
+            console.log("image rawImageDataUrl length:", rawImageDataUrl.length);
+            console.log("canvasFish size:", canvasFish.width, "x", canvasFish.height);
+            console.groupEnd();
+            // ==========================
+            
+            // --- 編集用画像準備 ---
+            editImageData = new Image();
+            editImageData.src = rawImageDataUrl;
+            editImageData.onload = () => {
+                canvasEdit.width = 640; 
+                canvasEdit.height = 360;
+                document.getElementById('edit-panel').style.display = 'block';
+                document.getElementById('edit-gaze-pos').innerText = `(${uv[0]}, ${uv[1]})`;
+                updateEditCanvas();
+            };
+        }
+    };
+    document.getElementById('btn-snap').onclick = triggerSnap;
+
+    // --- エディタ操作 (ドラッグ) ---
+    canvasEdit.onmousedown = (e) => {
+        isDragging = true;
+        const rect = canvasEdit.getBoundingClientRect();
+        startPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    };
+
+    window.addEventListener('mousemove', (e) => {
+        if(!isDragging) return;
+        const rect = canvasEdit.getBoundingClientRect();
+        const currX = Math.max(0, Math.min(e.clientX - rect.left, canvasEdit.width));
+        const currY = Math.max(0, Math.min(e.clientY - rect.top, canvasEdit.height));
+        
+        cropRect = {
+            x: Math.min(startPos.x, currX),
+            y: Math.min(startPos.y, currY),
+            w: Math.abs(currX - startPos.x),
+            h: Math.abs(currY - startPos.y)
+        };
+        
+        const guide = document.getElementById('crop-guide');
+        guide.style.display = 'block';
+        guide.style.left = (canvasEdit.offsetLeft + cropRect.x) + "px";
+        guide.style.top = (canvasEdit.offsetTop + cropRect.y) + "px";
+        guide.style.width = cropRect.w + "px";
+        guide.style.height = cropRect.h + "px";
+    });
+
+    window.addEventListener('mouseup', () => { isDragging = false; });
+
+    // --- ズーム・移動ボタン ---
+    document.getElementById('btn-zoom-in').onclick = () => { zoomLevel *= 1.2; updateEditCanvas(); };
+    document.getElementById('btn-zoom-out').onclick = () => { zoomLevel /= 1.2; updateEditCanvas(); };
+    document.getElementById('btn-up').onclick = () => { offsetUV[1] -= 20/zoomLevel; updateEditCanvas(); };
+    document.getElementById('btn-down').onclick = () => { offsetUV[1] += 20/zoomLevel; updateEditCanvas(); };
+    document.getElementById('btn-left').onclick = () => { offsetUV[0] -= 20/zoomLevel; updateEditCanvas(); };
+    document.getElementById('btn-right').onclick = () => { offsetUV[0] += 20/zoomLevel; updateEditCanvas(); };
+
+    // --- 保存・キャンセル ---
+    /**document.getElementById('btn-save-crop').onclick = async () => {
+        if(cropRect.w < 10 || cropRect.h < 10) { alert("マウスで切り抜く範囲をドラッグして選んでね"); return; }
+        
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = cropRect.w;
+        tempCanvas.height = cropRect.h;
+        const tCtx = tempCanvas.getContext('2d');
+        // canvasEditの表示内容をそのまま切り抜く
+        tCtx.drawImage(canvasEdit, cropRect.x, cropRect.y, cropRect.w, cropRect.h, 0, 0, cropRect.w, cropRect.h);
+        
+        //const croppedData = tempCanvas.toDataURL("image/jpeg");
+        const croppedData = tempCanvas.toDataURL("image/jpeg");
+
+        const snapshotData = {
+            time: Date.now(),
+            gaze_uv: editGazeUV,
+            full_image: editImageData.src,
+            cropped_image: croppedData
+        };
+
+        // 🔍 ログ出力
+        console.log("📸 Saving snapshot:", snapshotData);
+        console.log("  time:", new Date(snapshotData.time).toLocaleString());
+        console.log("  gaze_uv:", snapshotData.gaze_uv);
+        console.log("  full_image size:", snapshotData.full_image.length);
+        console.log("  cropped_image size:", snapshotData.cropped_image.length);
+
+        // IndexedDB に保存
+        await db.saveSnapshot(snapshotData);
+        downloadSnapshotAsJSON(snapshotData);
+
+        alert("画像を保存しました！");
+        document.getElementById('edit-panel').style.display = 'none';
+        document.getElementById('crop-guide').style.display = 'none';
+        
+    };
+    **/
+
+    document.getElementById('btn-save-crop').onclick = async () => {
+        if (cropRect.w > 10 && cropRect.h > 10) return; // ← 追加
+
+        await saveSnapshotFromCanvas(
+            canvasEdit,
+            0,
+            0,
+            canvasEdit.width,
+            canvasEdit.height
+        );
+    };
+
+
+    canvasEdit.addEventListener('mouseup', async () => {
+        if (cropRect.w > 10 && cropRect.h > 10) {
+            await saveSnapshotFromCanvas(
+                canvasEdit,
+                cropRect.x,
+                cropRect.y,
+                cropRect.w,
+                cropRect.h
+            );
+            cropRect = {x:0,y:0,w:0,h:0}; // ← 忘れずリセット
+        }
+    });
+
+
+
+
+    document.getElementById('btn-cancel-edit').onclick = () => {
+        document.getElementById('edit-panel').style.display = 'none';
+        document.getElementById('crop-guide').style.display = 'none';
+    };
+
+    // --- キーボード操作のメイン部分 ---
+    window.addEventListener('keydown', (e) => {
+        // エディタが開いている時
+        if(document.getElementById('edit-panel').style.display === 'block') {
+            if(e.key === "ArrowUp") document.getElementById('btn-up').click();
+            if(e.key === "ArrowDown") document.getElementById('btn-down').click();
+            if(e.key === "ArrowLeft") document.getElementById('btn-left').click();
+            if(e.key === "ArrowRight") document.getElementById('btn-right').click();
+            return; 
+        }
+
+        // 通常時
+        if(e.key === " " || e.key === "Enter") triggerSample();
+        if(e.key === "t") triggerTrain();
+        if(e.key === "s") triggerSnap();
+        if(e.key === "c") document.getElementById('btn-calib-start').click();
+    });
+
     
     // サンプリング (Space / Enter)
     const triggerSample = () => {
@@ -730,31 +1049,7 @@ window.onload = async () => {
     };
     document.getElementById('btn-train').onclick = triggerTrain;
 
-    // スナップショット (s)
-    const triggerSnap = async () => {
-        if(!currentModel) return;
-        // バッファの平均
-        if(snapBuffer.length < 10) return;
-        
-        let sum = [0,0,0];
-        for(let p of snapBuffer) { sum[0]+=p[0]; sum[1]+=p[1]; sum[2]+=p[2]; }
-        const mean3d = [sum[0]/snapBuffer.length, sum[1]/snapBuffer.length, sum[2]/snapBuffer.length];
-        
-        const uv = gaze3d_to_fish(mean3d, currentModel);
-        if(uv) {
-            const timestamp = Date.now();
-            const snap = {
-                time: timestamp,
-                gaze_2d_mean: uv,
-                fish_image: canvasFish.toDataURL("image/jpeg"),
-                note: "Snapshot via Web"
-            };
-            await db.saveSnapshot(snap);
-            console.log("Snapshot Saved to DB:", snap);
-            alert(`スナップショット保存: (${uv[0]}, ${uv[1]})`);
-        }
-    };
-    document.getElementById('btn-snap').onclick = triggerSnap;
+    
 
         // DBリセット
         // window.onload の中の btn-reset-db の部分
@@ -769,76 +1064,6 @@ window.onload = async () => {
         }
     };
 
-    // キーボード操作
-    window.addEventListener('keydown', (e) => {
-        if(e.key === " " || e.key === "Enter") triggerSample();
-        if(e.key === "t") triggerTrain();
-        if(e.key === "s") triggerSnap();
-        if(e.key === "c") document.getElementById('btn-calib-start').click();
-    });
-
-    // CSVダウンロード機能
-    document.getElementById('btn-download-csv').onclick = async () => {
-        const calibs = await db.loadCalibData();
-        if (calibs.length === 0) {
-            alert("保存されたデータがありません。");
-            return;
-        }
-
-        // CSVヘッダー
-        let csvContent = "data:text/csv;charset=utf-8,ID,X,Y,Z,u,v\n";
-        
-        // データを1行ずつ追加
-        calibs.forEach((d, i) => {
-            // d は [X, Y, Z, u, v]
-            csvContent += `${i+1},${d[0]},${d[1]},${d[2]},${d[3]},${d[4]}\n`;
-        });
-
-        // ダウンロード用リンクを作成してクリック
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `gaze_calib_data_${Date.now()}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
-
-    // 保存データ表示ボタンの動作
-    document.getElementById('btn-show-data').onclick = async () => {
-        const area = document.getElementById('data-display-area');
-        const log = document.getElementById('data-log');
-
-        // 表示・非表示を切り替える（トグル）
-        if (area.style.display === 'none') {
-            area.style.display = 'block';
-            
-            // 最新のデータをDBから読み込む
-            const calibs = await db.loadCalibData();
-            const model = await db.loadModel();
-
-            let report = "--- Calibration Points (9 points) ---\n";
-            if (calibs.length > 0) {
-                calibs.forEach((d, i) => {
-                    report += `Point ${i + 1}: [X:${d[0].toFixed(3)}, Y:${d[1].toFixed(3)}, Z:${d[2].toFixed(3)}] -> Fish(u:${d[3]}, v:${d[4]})\n`;
-                });
-            } else {
-                report += "No calibration data found.\n";
-            }
-
-            report += "\n--- Trained Model Coefficients ---\n";
-            if (model) {
-                report += `u_coef: [${model.coef_u.map(v => v.toFixed(4)).slice(0, 5)}...]\n`;
-                report += `v_coef: [${model.coef_v.map(v => v.toFixed(4)).slice(0, 5)}...]\n`;
-            } else {
-                report += "Model not trained yet.\n";
-            }
-
-            log.textContent = report;
-        } else {
-            area.style.display = 'none';
-        }
-    };
 };
 </script>
 </body>
