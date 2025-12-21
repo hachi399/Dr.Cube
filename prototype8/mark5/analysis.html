@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <title>Auto Capture AI Chat</title>
   <style>
-    /* ====== 全体デザイン ====== */
     html, body {
       margin: 0;
       padding: 0;
@@ -14,7 +13,6 @@
       color: #fff;
       overflow-y: auto;
     }
-
     main {
       display: flex;
       flex-direction: column;
@@ -23,7 +21,6 @@
       min-height: 100vh;
       padding: 2em 1em;
     }
-
     #chat {
       width: 80%;
       max-width: 600px;
@@ -36,7 +33,6 @@
       border-radius: 16px;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
     }
-
     #input {
       width: 70%;
       padding: 0.6em;
@@ -45,7 +41,6 @@
       font-size: 1em;
       margin-right: 0.5em;
     }
-
     button {
       padding: 0.6em 1em;
       border: none;
@@ -56,12 +51,10 @@
       cursor: pointer;
       transition: all 0.3s ease;
     }
-
     button:hover {
       transform: scale(1.05);
       background: linear-gradient(135deg, #0072ff, #00c6ff);
     }
-
     .chat-controls {
       display: flex;
       justify-content: center;
@@ -89,32 +82,60 @@
   <script>
     const API_URL = "https://dr-cube-1.onrender.com/chat";
 
-    // ✅ 親ウィンドウからの解析メッセージを受信
-    window.addEventListener("message", async (e) => {
-      if (e.origin !== location.origin) return;
+    /* ----------------------------------------------------
+        ✅ IndexedDB を読み取る関数（DB名とStore名は調整）
+    ---------------------------------------------------- */
+    async function loadIndexedDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open("DrCubeDB", 1);  // ← DB名を親ページと合わせる
 
-      const { type, payload } = e.data || {};
-      if (type !== "DB_UPDATE") return;
+        req.onerror = () => reject(req.error);
 
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction("messages", "readonly"); // ← Store名を親ページと合わせる
+          const store = tx.objectStore("messages");
+
+          const getAllReq = store.getAll();
+          getAllReq.onsuccess = () => resolve(getAllReq.result);
+          getAllReq.onerror = () => reject(getAllReq.error);
+        };
+      });
+    }
+
+    /* ----------------------------------------------------
+        ✅ ページ読み込み時に自動で DB を読み取り AI に送信
+    ---------------------------------------------------- */
+    window.addEventListener("DOMContentLoaded", async () => {
       const chat = document.getElementById("chat");
 
-      // 受信内容をチャット欄に表示
-      chat.innerHTML += `<p><b>解析データ受信:</b> ${JSON.stringify(payload)}</p>`;
+      chat.innerHTML += `<p><b>IndexedDB 読み取り中...</b></p>`;
 
-      // AI に解析データを送信
-      const res = await fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: JSON.stringify(payload) }),
-      });
+      try {
+        const dbData = await loadIndexedDB();
 
-      const data = await res.json();
+        chat.innerHTML += `<p><b>IndexedDB 読み取り完了:</b> ${JSON.stringify(dbData)}</p>`;
 
-      chat.innerHTML += `<p><b>AI解析:</b> ${data.reply}</p>`;
-      chat.scrollTop = chat.scrollHeight;
+        // ✅ AI に送信
+        const res = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: JSON.stringify(dbData) }),
+        });
+
+        const data = await res.json();
+
+        chat.innerHTML += `<p><b>AI解析:</b> ${data.reply}</p>`;
+        chat.scrollTop = chat.scrollHeight;
+
+      } catch (err) {
+        chat.innerHTML += `<p style="color:red;"><b>IndexedDB 読み取りエラー:</b> ${err}</p>`;
+      }
     });
 
-    // ✅ 手動入力メッセージ送信
+    /* ----------------------------------------------------
+        ✅ 手動チャット送信
+    ---------------------------------------------------- */
     async function sendMessage() {
       const input = document.getElementById("input");
       const chat = document.getElementById("chat");
@@ -137,7 +158,6 @@
       chat.scrollTop = chat.scrollHeight;
     }
 
-    // Enterキーで送信
     document.getElementById("input").addEventListener("keydown", function (event) {
       if (event.key === "Enter") {
         sendMessage();
