@@ -168,10 +168,10 @@
 
     linkEnter.append('line').attr('class','hit').attr('stroke','transparent').attr('stroke-width',20);
     linkEnter.append('line').attr('class','visible').attr('stroke','#bfbfbf').attr('stroke-width',2);
+const nodeSel = nodeG.selectAll('g.node').data(nodes, d=>d.id);
+nodeSel.exit().remove();
 
-    const nodeSel = nodeG.selectAll('g.node').data(nodes, d=>d.id);
-    nodeSel.exit().remove();
-    const nodeEnter = nodeSel.enter().append('g')
+const nodeEnter = nodeSel.enter().append('g')
   .attr('class','node')
   .on('click', (e, d) => {
     // ✅ 親ページへ保存依頼を送信
@@ -180,10 +180,25 @@
       location.origin
     );
   });
-    simulation.nodes(nodes);
-    simulation.force('link').links(links);
-    simulation.alpha(0.9).restart();
-  }
+
+// ✅ ノードの見た目（circle）
+nodeEnter.append('circle')
+  .attr('r',16)
+  .attr('fill','#ffdca8')
+  .attr('stroke','#e6a86b')
+  .attr('stroke-width',2);
+
+// ✅ ノードのラベル（text）
+nodeEnter.append('text')
+  .attr('dy',4)
+  .attr('text-anchor','middle')
+  .style('font-size','11px')
+  .text(d=>d.name);
+
+simulation.nodes(nodes);
+simulation.force('link').links(links);
+simulation.alpha(0.9).restart();
+}
 
   function ticked(){
     nodeG.selectAll('g.node').attr('transform', d=>`translate(${d.x},${d.y})`);
