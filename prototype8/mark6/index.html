@@ -1,175 +1,264 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>Auto Capture AI Chat</title>
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      background: radial-gradient(circle at top left, #0f2027, #203a43, #2c5364);
-      font-family: "Segoe UI", "Hiragino Sans", sans-serif;
-      color: #fff;
-      overflow-y: auto;
-    }
-    main {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
-      min-height: 100vh;
-      padding: 2em 1em;
-    }
-    #chat {
-      width: 80%;
-      max-width: 600px;
-      height: 300px;
-      overflow-y: auto;
-      margin-bottom: 1em;
-      padding: 1em;
-      backdrop-filter: blur(20px) saturate(180%);
-      background-color: rgba(255, 255, 255, 0.1);
-      border-radius: 16px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-    }
-    #input {
-      width: 70%;
-      padding: 0.6em;
-      border-radius: 8px;
-      border: none;
-      font-size: 1em;
-      margin-right: 0.5em;
-    }
-    button {
-      padding: 0.6em 1em;
-      border: none;
-      border-radius: 12px;
-      background: linear-gradient(135deg, #00c6ff, #0072ff);
-      color: #fff;
-      font-weight: bold;
-      cursor: pointer;
-      transition: all 0.3s ease;
-    }
-    button:hover {
-      transform: scale(1.05);
-      background: linear-gradient(135deg, #0072ff, #00c6ff);
-    }
-    .chat-controls {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      flex-wrap: wrap;
-      margin-bottom: 2em;
-    }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Swipe Card App — Pattern A Full Fixed</title>
+
+<style>
+html,body{height:100%;}
+body{
+  margin:0;
+  background:#111;
+  color:#fff;
+  font-family:system-ui;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+}
+
+#cardArea{
+  display:flex;
+  width:100vw;
+  height:100vh;
+}
+
+.card{
+  flex:1;
+  height:100%;
+  background:#333;
+  border-radius:12px;
+  box-shadow:0 8px 20px rgba(0,0,0,.6);
+  overflow:hidden;
+  position:relative;
+  display:none;
+  flex-direction:column;
+}
+
+.card.visible{ display:flex; }
+
+.card-type{ padding:8px 12px; }
+
+.iframe-wrap{ flex:1; }
+iframe{ width:100%; height:100%; border:none; }
+
+.swipe-layer{
+  position:absolute;
+  inset:0;
+  z-index:10;
+}
+
+#controls{ margin:12px; }
+#log{ font-size:12px; color:#bbb; margin-bottom:8px; }
+</style>
 </head>
-
 <body>
-  <main>
-    <h1>Dr.Cube AI解析 /Team.ぐんまちゃん/</h1>
 
-    <div id="chat">
-      <p>お手伝いできることはありますか？</p>
-    </div>
+<div id="cardArea"></div>
 
-    <div class="chat-controls">
-      <input id="input" placeholder="メッセージを入力..." />
-      <button onclick="sendMessage()">送信</button>
-    </div>
-  </main>
+<div id="controls">
+  <button id="leftBtn">←</button>
+  <button id="rightBtn">→</button>
+  <button id="toggleIframeInteraction">Toggle iframe Interaction</button>
+</div>
 
-  <script>
-    const API_URL = "https://dr-cube-1.onrender.com/chat";
+<div id="log"></div>
 
-    /* ----------------------------------------------------
-        ✅ 親ページの IndexedDB を読み取る
-    ---------------------------------------------------- */
-    async function loadIndexedDB() {
-      return new Promise((resolve, reject) => {
-        const req = indexedDB.open("cardDB", 1);
+<script>
+/* =====================================================
+   iframe ⇄ 親ページ通信用
+===================================================== */
+function sendToIframe(iframe, type, payload){
+  if(!iframe || !iframe.contentWindow) return;
+  iframe.contentWindow.postMessage({ type, payload }, location.origin);
+}
 
-        req.onerror = () => reject(req.error);
+/* ================= IndexedDB ================= */
+const DB_NAME = 'cardDB';
+const STORE = 'analysis';
+let db;
 
-        req.onsuccess = () => {
-          const db = req.result;
-          const tx = db.transaction("analysis", "readonly");
-          const store = tx.objectStore("analysis");
-
-          const getAllReq = store.getAll();
-          getAllReq.onsuccess = () => resolve(getAllReq.result);
-          getAllReq.onerror = () => reject(getAllReq.error);
-        };
-      });
-    }
-
-    /* ----------------------------------------------------
-        ✅ ページ読み込み時に自動で DB を読み取り AI に送信
-    ---------------------------------------------------- */
-    window.addEventListener("DOMContentLoaded", async () => {
-      const chat = document.getElementById("chat");
-
-      chat.innerHTML += `<p><b>IndexedDB 読み取り中...</b></p>`;
-
-      try {
-        const allData = await loadIndexedDB();
-
-        if (allData.length === 0) {
-          chat.innerHTML += `<p><b>IndexedDB は空です。</b></p>`;
-          return;
-        }
-
-        const latest = allData[allData.length - 1]; // ✅ 最新データ
-
-        chat.innerHTML += `<p><b>最新データ:</b> ${JSON.stringify(latest)}</p>`;
-
-        // ✅ AI に送信
-        const res = await fetch(API_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: JSON.stringify(latest) }),
-        });
-
-        const data = await res.json();
-
-        chat.innerHTML += `<p><b>AI解析:</b> ${data.reply}</p>`;
-        chat.scrollTop = chat.scrollHeight;
-
-      } catch (err) {
-        chat.innerHTML += `<p style="color:red;"><b>IndexedDB 読み取りエラー:</b> ${err}</p>`;
+function openDB(){
+  return new Promise((resolve, reject)=>{
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains(STORE)){
+        db.createObjectStore(STORE, { keyPath:'id', autoIncrement:true });
       }
-    });
+    };
+    req.onsuccess = e => { db = e.target.result; resolve(db); };
+    req.onerror = e => reject(e);
+  });
+}
 
-    /* ----------------------------------------------------
-        ✅ 手動チャット送信
-    ---------------------------------------------------- */
-    async function sendMessage() {
-      const input = document.getElementById("input");
-      const chat = document.getElementById("chat");
-      const textContent = input.value;
+function saveResult(data){
+  const tx = db.transaction(STORE, 'readwrite');
+  tx.objectStore(STORE).add({ time:Date.now(), data });
+  tx.oncomplete = ()=>{
+    console.log('IndexedDB saved:', data);
+    broadcastUpdate(data);
+  };
+}
 
-      if (!textContent) return;
-
-      chat.innerHTML += `<p><b>あなた:</b> ${textContent}</p>`;
-      input.value = "";
-
-      const res = await fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: textContent }),
-      });
-
-      const data = await res.json();
-
-      chat.innerHTML += `<p><b>AI:</b> ${data.reply}</p>`;
-      chat.scrollTop = chat.scrollHeight;
+function broadcastUpdate(data){
+  document.querySelectorAll('iframe').forEach(ifr=>{
+    if(ifr.dataset.cardType === 'analysis' || ifr.dataset.cardType === 'idea'){
+      ifr.contentWindow.postMessage(
+        { type:'DB_UPDATE', payload:data },
+        location.origin
+      );
     }
+  });
+}
 
-    document.getElementById("input").addEventListener("keydown", function (event) {
-      if (event.key === "Enter") {
-        sendMessage();
-      }
-    });
-  </script>
+window.addEventListener('message', event=>{
+  if(event.origin !== location.origin) return;
+  const { type, payload } = event.data || {};
+
+  if(type === 'IMAGE_RESULT'){
+    saveResult(payload);
+  }
+});
+
+openDB();
+
+const logEl = document.getElementById("log");
+function log(msg){ logEl.textContent = msg; console.log(msg); }
+
+/* =====================================================
+   アプリ本体
+===================================================== */
+const PAGE_URL = {
+  idea: "idea.html",
+  analysis: "analysis.html",
+  image: "image.html"
+};
+
+let overlayEnabled = true;
+let globalCount = 0;
+let centerIndex = 3;
+
+let deck = [
+  {id:crypto.randomUUID(), type:'analysis', label:'解析(4)'},
+  {id:crypto.randomUUID(), type:'analysis', label:'解析(6)'},
+  {id:crypto.randomUUID(), type:'idea',     label:'発想(5)'},
+  {id:crypto.randomUUID(), type:'image',    label:'画像'},
+  {id:crypto.randomUUID(), type:'analysis', label:'解析(2)'},
+  {id:crypto.randomUUID(), type:'idea',     label:'発想(3)'},
+  {id:crypto.randomUUID(), type:'idea',     label:'発想(1)'}
+];
+
+const cardArea = document.getElementById("cardArea");
+const cardMap = new Map();
+
+/* ===== util ===== */
+function getVisibleIndices(){
+  const start = Math.max(0, centerIndex - 1);
+  const end   = Math.min(deck.length - 1, centerIndex + 2);
+  const out=[];
+  for(let i=start;i<=end;i++) out.push(i);
+  return out;
+}
+
+/* ===== 初回のみカード生成 ===== */
+function createCard(card){
+  const el = document.createElement("div");
+  el.className = "card";
+
+  const label = document.createElement("div");
+  label.className = "card-type";
+  label.textContent = card.label;
+  el.appendChild(label);
+
+  const wrap = document.createElement("div");
+  wrap.className = "iframe-wrap";
+
+  const iframe = document.createElement("iframe");
+  iframe.src = PAGE_URL[card.type];
+  iframe.dataset.cardType = card.type;   // ★ 重要
+  iframe.dataset.cardId   = card.id;
+
+  iframe.addEventListener('load', ()=>{
+    sendToIframe(iframe, 'INIT', { cardType: card.type });
+  });
+
+  wrap.appendChild(iframe);
+  el.appendChild(wrap);
+
+  const overlay = document.createElement("div");
+  overlay.className = "swipe-layer";
+  el.appendChild(overlay);
+
+  let startX = 0;
+  overlay.addEventListener("pointerdown", e=>{
+    overlay.setPointerCapture(e.pointerId);
+    startX = e.clientX;
+  });
+
+  overlay.addEventListener("pointerup", e=>{
+    const dx = e.clientX - startX;
+    if(Math.abs(dx) > 40){
+      const index = deck.findIndex(d=>d.id===card.id);
+      handleSwipe(dx, index);
+    }
+  });
+
+  cardArea.appendChild(el);
+  cardMap.set(card.id, { el, overlay, iframe });
+}
+
+/* ===== render（表示制御のみ） ===== */
+function render(){
+  cardMap.forEach(v=>{
+    v.el.classList.remove("visible");
+  });
+
+  getVisibleIndices().forEach(i=>{
+    const card = deck[i];
+    const entry = cardMap.get(card.id);
+    if(entry){
+      entry.el.classList.add("visible");
+      entry.overlay.style.pointerEvents =
+        overlayEnabled ? "auto" : "none";
+    }
+  });
+}
+
+/* ===== swipe ===== */
+function handleSwipe(dist, index){
+  const type = dist > 0 ? "idea" : "analysis";
+  globalCount++;
+
+  const card = {
+    id: crypto.randomUUID(),
+    type,
+    label: type==="idea"
+      ? `発想(${globalCount})`
+      : `解析(${globalCount})`
+  };
+
+  deck.splice(index + 1, 0, card);
+  createCard(card);
+  centerIndex = index + 1;
+  render();
+}
+
+/* ===== 初期化 ===== */
+deck.forEach(createCard);
+render();
+
+/* ===== controls ===== */
+leftBtn.onclick = ()=>{
+  if(centerIndex>0){ centerIndex--; render(); }
+};
+rightBtn.onclick = ()=>{
+  if(centerIndex<deck.length-1){ centerIndex++; render(); }
+};
+toggleIframeInteraction.onclick = ()=>{
+  overlayEnabled = !overlayEnabled;
+  render();
+};
+</script>
 </body>
 </html>

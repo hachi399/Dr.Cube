@@ -83,17 +83,17 @@
     const API_URL = "https://dr-cube-1.onrender.com/chat";
 
     /* ----------------------------------------------------
-        ✅ IndexedDB を読み取る関数（DB名とStore名は調整）
+        ✅ 親ページの IndexedDB を読み取る
     ---------------------------------------------------- */
     async function loadIndexedDB() {
       return new Promise((resolve, reject) => {
-        const req = indexedDB.open("cardDB", 1);  // ← DB名を親ページと合わせる
+        const req = indexedDB.open("cardDB", 1);
 
         req.onerror = () => reject(req.error);
 
         req.onsuccess = () => {
           const db = req.result;
-          const tx = db.transaction("analysis", "readonly"); // ← Store名を親ページと合わせる
+          const tx = db.transaction("analysis", "readonly");
           const store = tx.objectStore("analysis");
 
           const getAllReq = store.getAll();
@@ -112,15 +112,22 @@
       chat.innerHTML += `<p><b>IndexedDB 読み取り中...</b></p>`;
 
       try {
-        const dbData = await loadIndexedDB();
+        const allData = await loadIndexedDB();
 
-        chat.innerHTML += `<p><b>IndexedDB 読み取り完了:</b> ${JSON.stringify(dbData)}</p>`;
+        if (allData.length === 0) {
+          chat.innerHTML += `<p><b>IndexedDB は空です。</b></p>`;
+          return;
+        }
+
+        const latest = allData[allData.length - 1]; // ✅ 最新データ
+
+        chat.innerHTML += `<p><b>最新データ:</b> ${JSON.stringify(latest)}</p>`;
 
         // ✅ AI に送信
         const res = await fetch(API_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: JSON.stringify(dbData) }),
+          body: JSON.stringify({ message: JSON.stringify(latest) }),
         });
 
         const data = await res.json();
