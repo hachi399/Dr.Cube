@@ -150,6 +150,22 @@
     const linkSel = linkG.selectAll('g.link').data(links, d=>d.id);
     linkSel.exit().remove();
     const linkEnter = linkSel.enter().append('g').attr('class','link');
+    
+    //-------------------------追加文-------------------------
+    linkEnter
+  .on('mouseover', (e, d) => {
+    tooltip.style('display', 'block')
+      .text(d.reason);
+  })
+  .on('mousemove', (e) => {
+    tooltip.style('left', (e.pageX + 10) + 'px')
+      .style('top', (e.pageY + 10) + 'px');
+  })
+  .on('mouseout', () => {
+    tooltip.style('display', 'none');
+  });
+  //---------------------------------------------------------
+
     linkEnter.append('line').attr('class','hit').attr('stroke','transparent').attr('stroke-width',20);
     linkEnter.append('line').attr('class','visible').attr('stroke','#bfbfbf').attr('stroke-width',2);
 
