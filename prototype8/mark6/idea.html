@@ -171,10 +171,15 @@
 
     const nodeSel = nodeG.selectAll('g.node').data(nodes, d=>d.id);
     nodeSel.exit().remove();
-    const nodeEnter = nodeSel.enter().append('g').attr('class','node');
-    nodeEnter.append('circle').attr('r',16).attr('fill','#ffdca8').attr('stroke','#e6a86b').attr('stroke-width',2);
-    nodeEnter.append('text').attr('dy',4).attr('text-anchor','middle').style('font-size','11px').text(d=>d.name);
-
+    const nodeEnter = nodeSel.enter().append('g')
+  .attr('class','node')
+  .on('click', (e, d) => {
+    // ✅ 親ページへ保存依頼を送信
+    window.parent.postMessage(
+      { type: "SAVE_WORD", payload: d.name },
+      location.origin
+    );
+  });
     simulation.nodes(nodes);
     simulation.force('link').links(links);
     simulation.alpha(0.9).restart();

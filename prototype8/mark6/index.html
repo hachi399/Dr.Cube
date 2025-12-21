@@ -121,6 +121,15 @@ window.addEventListener('message', event=>{
   }
 });
 
+window.addEventListener('message', event => {
+  if(event.origin !== location.origin) return;
+  const { type, payload } = event.data || {};
+
+  if(type === 'SAVE_WORD'){
+    saveResult({ text: payload });
+  }
+});
+
 openDB();
 
 const logEl = document.getElementById("log");
