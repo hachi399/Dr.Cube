@@ -87,7 +87,7 @@
     ---------------------------------------------------- */
     async function loadIndexedDB() {
       return new Promise((resolve, reject) => {
-        const req = indexedDB.open("DrCubeDB", 1);  // ← DB名を親ページと合わせる
+        const req = indexedDB.open("cardDB", 1);  // ← DB名を親ページと合わせる
 
         req.onerror = () => reject(req.error);
 
