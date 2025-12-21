@@ -93,8 +93,8 @@
 
         req.onsuccess = () => {
           const db = req.result;
-          const tx = db.transaction("messages", "readonly"); // ← Store名を親ページと合わせる
-          const store = tx.objectStore("messages");
+          const tx = db.transaction("analysis", "readonly"); // ← Store名を親ページと合わせる
+          const store = tx.objectStore("analysis");
 
           const getAllReq = store.getAll();
           getAllReq.onsuccess = () => resolve(getAllReq.result);
