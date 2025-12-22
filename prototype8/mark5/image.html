@@ -739,69 +739,67 @@ async function saveSnapshotFromCanvas(sourceCanvas, sx, sy, sw, sh) {
         sourceCanvas,
         sx, sy, sw, sh,
         0, 0, sw, sh
-    );  
-    // これがAIに送る画像データ（Base64）
-    const croppedData = tempCanvas.toDataURL("image/jpeg");
+    );
 
-    // 2. UIへのフィードバック（ユーザーに「解析中だよ」と伝える）
+    // --- ここから API 送信用の書き換え ---
+
+    // UIの準備
     const statusFish = document.getElementById('status-fish');
     const dataLog = document.getElementById('data-log');
-    
-    // ログエリアを表示
     document.getElementById('data-display-area').style.display = 'block';
-    statusFish.innerText = "⌛ AI解析中... (親ページへ送信準備)";
+    statusFish.innerText = "⌛ AI解析中... (データを圧縮して送信中)";
 
-    // 3. AI解析 & 親ページへの送信処理 (ここが移植した部分！)
-    try {
-        const prompt = "以下の画像から読み取れる単語のみ（複数）を出力してください。";
-        const payload = { prompt: prompt, image: croppedData };
+    // 🔹 toBlob を使って非同期で画像を取り出す
+    tempCanvas.toBlob(async (blob) => {
+        if (!blob) {
+            statusFish.innerText = "❌ 画像の生成に失敗しました";
+            return;
+        }
 
-        // APIへ送信
-        const res = await fetch(API_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-        });
+        try {
+            // AIに送るための「荷物（FormData）」を作る
+            const formData = new FormData();
+            formData.append('prompt', "以下の画像から読み取れる単語のみ（複数）を出力してください。");
+            // 画像を 'image' という名前でファイルとして追加 (画質設定などは toBlob の引数で指定)
+            formData.append('image', blob, 'cropped.jpg');
 
-      　console.log("AI Result:", payload);
+            // APIへ送信（Content-Typeヘッダーは FormData の場合、自動で設定されるので不要よ！）
+            const res = await fetch(API_URL, {
+                method: "POST",
+                body: formData 
+            });
 
-        if (!res.ok) throw new Error("API Error: " + res.status);
+            if (!res.ok) throw new Error("API Error: " + res.status);
 
-        const data = await res.json();
-        const word = data?.reply?.trim() || "(no result)";
+            const data = await res.json();
+            const word = data?.reply?.trim() || "(no result)";
 
-        // --- 結果が出た後の処理 ---
+            // --- 結果が出た後の処理 ---
+            console.log("AI Result:", word);
+            statusFish.innerText = "✅ 解析完了: " + word;
+            dataLog.innerText = `[AI] ${word}\n` + dataLog.innerText;
 
-        // A. 自分の画面上のログに出す
-        console.log("AI Result:", word);
-        statusFish.innerText = "✅ 解析完了: " + word;
-        dataLog.innerText = `[AI] ${word}\n` + dataLog.innerText;
+            // 🔹 親ページへ送信
+            parent.postMessage({
+                type: 'IMAGE_RESULT',
+                payload: word
+            }, location.origin);
 
-        // 🔹 親ページへ送信
-        parent.postMessage({
-            type: 'IMAGE_RESULT',
-            payload: word
-        }, location.origin);
+            // 🔹 DBに保存しておく（画像は後で見れるよう、一応 Base64 に戻すか Blobのまま保存）
+            const snapshotData = {
+                time: Date.now(),
+                gaze_uv: editGazeUV,
+                cropped_image: tempCanvas.toDataURL("image/jpeg", 0.7), // DB用
+                ai_word: word
+            };
+            await db.saveSnapshot(snapshotData);
 
-        // C. DBに保存しておく（後で見返せるように）
-        const snapshotData = {
-            time: Date.now(),
-            gaze_uv: editGazeUV,
-            cropped_image: croppedData,
-            ai_word: word
-        };
-        await db.saveSnapshot(snapshotData);
-
-    } catch (err) {
-        console.error("AI解析エラー:", err);
-        statusFish.innerText = "❌ エラー: " + err.message;
-        
-        // エラーだった場合も、必要なら親ページにエラーを伝える？
-        parent.postMessage({
-            type: 'IMAGE_ERROR',
-            payload: err.message
-        }, "*");
-    }
+        } catch (err) {
+            console.error("AI解析エラー:", err);
+            statusFish.innerText = "❌ エラー: " + err.message;
+            parent.postMessage({ type: 'IMAGE_ERROR', payload: err.message }, "*");
+        }
+    }, 'image/jpeg', 0.8); // 👈 ここで JPG の画質を 0.8 に指定して軽量化！
 
     // 4. エディタ画面を閉じる
     document.getElementById('edit-panel').style.display = 'none';
