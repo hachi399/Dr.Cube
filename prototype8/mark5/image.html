@@ -763,6 +763,8 @@ async function saveSnapshotFromCanvas(sourceCanvas, sx, sy, sw, sh) {
             body: JSON.stringify(payload)
         });
 
+      　console.log("AI Result:", payload);
+
         if (!res.ok) throw new Error("API Error: " + res.status);
 
         const data = await res.json();
