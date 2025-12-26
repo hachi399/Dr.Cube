@@ -741,72 +741,68 @@ async function saveSnapshotFromCanvas(sourceCanvas, sx, sy, sw, sh) {
         0, 0, sw, sh
     );
 
-    // --- ここから API 送信用の書き換え ---
-
-    // UIの準備
+    // --- UI準備 ---
     const statusFish = document.getElementById('status-fish');
     const dataLog = document.getElementById('data-log');
     document.getElementById('data-display-area').style.display = 'block';
-    statusFish.innerText = "⌛ AI解析中... (データを圧縮して送信中)";
+    statusFish.innerText = "⌛ AI解析中...";
 
-    // 🔹 toBlob を使って非同期で画像を取り出す
-    tempCanvas.toBlob(async (blob) => {
-        if (!blob) {
-            statusFish.innerText = "❌ 画像の生成に失敗しました";
-            return;
-        }
+    try {
+        // 🔹 Canvas → Base64（JPEG 0.75で十分軽量）
+        const base64Image = tempCanvas.toDataURL("image/jpeg", 0.75);
 
-        try {
-            // AIに送るための「荷物（FormData）」を作る
-            const formData = new FormData();
-            formData.append('prompt', "以下の画像から読み取れる単語のみ（複数）を出力してください。");
-            // 画像を 'image' という名前でファイルとして追加 (画質設定などは toBlob の引数で指定)
-            formData.append('image', blob, 'cropped.jpg');
+        // 🔹 API送信用 JSON
+        const payload = {
+            prompt: "以下の画像から読み取れる単語のみ（複数）を出力してください。",
+            image: base64Image
+        };
 
-            // APIへ送信（Content-Typeヘッダーは FormData の場合、自動で設定されるので不要よ！）
-            const res = await fetch(API_URL, {
-                method: "POST",
-                body: formData 
-            });
+        const res = await fetch(API_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+        });
 
-            if (!res.ok) throw new Error("API Error: " + res.status);
+        if (!res.ok) throw new Error("API Error: " + res.status);
 
-            const data = await res.json();
-            const word = data?.reply?.trim() || "(no result)";
+        const data = await res.json();
+        const word = data?.reply?.trim() || "(no result)";
 
-            // --- 結果が出た後の処理 ---
-            console.log("AI Result:", word);
-            statusFish.innerText = "✅ 解析完了: " + word;
-            dataLog.innerText = `[AI] ${word}\n` + dataLog.innerText;
+        // --- 結果反映 ---
+        console.log("AI Result:", word);
+        statusFish.innerText = "✅ 解析完了: " + word;
+        dataLog.innerText = `[AI] ${word}\n` + dataLog.innerText;
 
-            // 🔹 親ページへ送信
-            parent.postMessage({
-                type: 'IMAGE_RESULT',
-                payload: word
-            }, location.origin);
+        // 🔹 親ページへ送信
+        parent.postMessage({
+            type: 'IMAGE_RESULT',
+            payload: word
+        }, location.origin);
 
-            // 🔹 DBに保存しておく（画像は後で見れるよう、一応 Base64 に戻すか Blobのまま保存）
-            const snapshotData = {
-                time: Date.now(),
-                gaze_uv: editGazeUV,
-                cropped_image: tempCanvas.toDataURL("image/jpeg", 0.7), // DB用
-                ai_word: word
-            };
-            await db.saveSnapshot(snapshotData);
+        // 🔹 DB保存（すでに Base64 なのでそのまま使える）
+        const snapshotData = {
+            time: Date.now(),
+            gaze_uv: editGazeUV,
+            cropped_image: base64Image,
+            ai_word: word
+        };
+        await db.saveSnapshot(snapshotData);
 
-        } catch (err) {
-            console.error("AI解析エラー:", err);
-            statusFish.innerText = "❌ エラー: " + err.message;
-            parent.postMessage({ type: 'IMAGE_ERROR', payload: err.message }, "*");
-        }
-    }, 'image/jpeg', 0.8); // 👈 ここで JPG の画質を 0.8 に指定して軽量化！
+    } catch (err) {
+        console.error("AI解析エラー:", err);
+        statusFish.innerText = "❌ エラー: " + err.message;
+        parent.postMessage({ type: 'IMAGE_ERROR', payload: err.message }, "*");
+    }
 
-    // 4. エディタ画面を閉じる
+    // --- UIを閉じる ---
     document.getElementById('edit-panel').style.display = 'none';
     document.getElementById('crop-guide').style.display = 'none';
-    
+
     alert("解析完了！親ページにデータを送りました。");
 }
+
 
 // --- 編集エディタ用のグローバル変数 ---
 let editImageData = null; 
