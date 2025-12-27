@@ -253,6 +253,92 @@ simulation.alpha(0.9).restart();
     simulation.alpha(0.3).restart();
   });
 
+  /* ===========================
+   🔧 addNode を拡張（realName）
+=========================== */
+function addNode(name, parentId=null, depth=0, realName=null){
+  const n = {
+    id: makeId(),
+    name,
+    realName: realName || name,
+    depth
+  };
+
+  const p = parentId && findNodeById(parentId);
+  n.x = p?.x || getW()/2;
+  n.y = p?.y || getH()/2;
+
+  nodes.push(n);
+
+  if(p){
+    const link = {id:'l'+links.length, source:p, target:n, reason:'生成中'};
+    links.push(link);
+    fetchReason(p.realName, n.realName).then(r=>link.reason=r);
+  }
+  return n;
+}
+
+function restart(){
+  linkG.selectAll('g').data(links,d=>d.id)
+    .join(enter=>{
+      const g=enter.append('g');
+      g.append('line').attr('stroke','#bbb').attr('stroke-width',2);
+      return g;
+    });
+
+  nodeG.selectAll('g').data(nodes,d=>d.id)
+    .join(enter=>{
+      const g=enter.append('g');
+      g.append('circle').attr('r',16).attr('fill','#ffdca8');
+      g.append('text').attr('dy',4).attr('text-anchor','middle').style('font-size','11px');
+      return g;
+    })
+    .select('text').text(d=>d.name);
+
+  simulation.nodes(nodes);
+  simulation.force('link').links(links);
+  simulation.alpha(0.9).restart();
+}
+
+function ticked(){
+  nodeG.selectAll('g').attr('transform',d=>`translate(${d.x},${d.y})`);
+  linkG.selectAll('line')
+    .attr('x1',d=>d.source.x)
+    .attr('y1',d=>d.source.y)
+    .attr('x2',d=>d.target.x)
+    .attr('y2',d=>d.target.y);
+}
+
+/* ===========================
+   ✅ 親ノード一時マスク処理
+=========================== */
+document.getElementById('addSeedBtn').addEventListener('click', async ()=>{
+  const seed = document.getElementById('seedInput').value.trim();
+  if(!seed) return;
+
+  nodes=[]; links=[]; idCounter=0;
+
+  // 🔹 表示用は短く、内部は seed
+  const parent = addNode('画像から生成', null, 0, seed);
+  restart();
+
+  const children = await fetchWords(seed,6);
+  for(const c of children){
+    const child = addNode(c, parent.id, 1);
+    restart();
+    const grands = await fetchWords(c,3);
+    for(const g of grands){
+      addNode(g, child.id, 2);
+    }
+    restart();
+  }
+
+  // 🔹 最後に親ノード表示だけ差し替え
+  parent.name = parent.realName;
+  restart();
+});
+
+
   </script>
 </body>
 </html>
