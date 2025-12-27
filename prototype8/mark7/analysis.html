@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Auto Capture AI Chat</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: radial-gradient(circle at top left, #0f2027, #203a43, #2c5364);
+      font-family: "Segoe UI", "Hiragino Sans", sans-serif;
+      color: #fff;
+      overflow-y: auto;
+    }
+    main {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+      padding: 2em 1em;
+    }
+    #chat {
+      width: 80%;
+      max-width: 600px;
+      height: 300px;
+      overflow-y: auto;
+      margin-bottom: 1em;
+      padding: 1em;
+      backdrop-filter: blur(20px) saturate(180%);
+      background-color: rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+    #input {
+      width: 70%;
+      padding: 0.6em;
+      border-radius: 8px;
+      border: none;
+      font-size: 1em;
+      margin-right: 0.5em;
+    }
+    button {
+      padding: 0.6em 1em;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #00c6ff, #0072ff);
+      color: #fff;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    button:hover {
+      transform: scale(1.05);
+      background: linear-gradient(135deg, #0072ff, #00c6ff);
+    }
+    .chat-controls {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 2em;
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <h1>Dr.Cube AI解析 /Team.ぐんまちゃん/</h1>
+
+    <div id="chat">
+      <p>お手伝いできることはありますか？</p>
+    </div>
+
+    <div class="chat-controls">
+      <input id="input" placeholder="メッセージを入力..." />
+      <button onclick="sendMessage()">送信</button>
+    </div>
+  </main>
+
+  <script>
+    const API_URL = "https://dr-cube-1.onrender.com/chat";
+
+    /* ----------------------------------------------------
+        ✅ 親ページの IndexedDB を読み取る
+    ---------------------------------------------------- */
+    async function loadIndexedDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open("cardDB", 1);
+
+        req.onerror = () => reject(req.error);
+
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction("analysis", "readonly");
+          const store = tx.objectStore("analysis");
+
+          const getAllReq = store.getAll();
+          getAllReq.onsuccess = () => resolve(getAllReq.result);
+          getAllReq.onerror = () => reject(getAllReq.error);
+        };
+      });
+    }
+
+    /* ----------------------------------------------------
+        ✅ ページ読み込み時に自動で DB を読み取り AI に送信
+    ---------------------------------------------------- */
+    window.addEventListener("DOMContentLoaded", async () => {
+      const chat = document.getElementById("chat");
+
+      chat.innerHTML += `<p><b>IndexedDB 読み取り中...</b></p>`;
+
+      try {
+        const allData = await loadIndexedDB();
+
+        if (allData.length === 0) {
+          chat.innerHTML += `<p><b>IndexedDB は空です。</b></p>`;
+          return;
+        }
+
+        const latest = allData[allData.length - 1]; // ✅ 最新データ
+
+        chat.innerHTML += `<p><b>最新データ:</b> ${JSON.stringify(latest)}</p>`;
+
+        // ✅ AI に送信
+        const res = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: JSON.stringify(latest) }),
+        });
+
+        const data = await res.json();
+
+        chat.innerHTML += `<p><b>AI解析:</b> ${data.reply}</p>`;
+        chat.scrollTop = chat.scrollHeight;
+
+      } catch (err) {
+        chat.innerHTML += `<p style="color:red;"><b>IndexedDB 読み取りエラー:</b> ${err}</p>`;
+      }
+    });
+
+    /* ----------------------------------------------------
+        ✅ 手動チャット送信
+    ---------------------------------------------------- */
+    async function sendMessage() {
+      const input = document.getElementById("input");
+      const chat = document.getElementById("chat");
+      const textContent = input.value;
+
+      if (!textContent) return;
+
+      chat.innerHTML += `<p><b>あなた:</b> ${textContent}</p>`;
+      input.value = "";
+
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: textContent }),
+      });
+
+      const data = await res.json();
+
+      chat.innerHTML += `<p><b>AI:</b> ${data.reply}</p>`;
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    document.getElementById("input").addEventListener("keydown", function (event) {
+      if (event.key === "Enter") {
+        sendMessage();
+      }
+    });
+  </script>
+</body>
+</html>
