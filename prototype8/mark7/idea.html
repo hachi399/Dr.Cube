@@ -15,244 +15,171 @@
 </head>
 <body>
 
-  <div class="controls">
-    <button id="addSeedBtn">生成（親→子6→孫3×6）</button>
-  </div>
+<div class="controls">
+  <button id="addSeedBtn">生成（親→子6→孫3×6）</button>
+</div>
 
-  <!-- ✅ 親から受け取った seed を保存する隠しフィールド -->
-  <input id="seedInput" type="hidden">
+<input id="seedInput" type="hidden">
 
-  <svg id="graph"></svg>
-  <div id="tooltip" class="tooltip"></div>
+<svg id="graph"></svg>
+<div id="tooltip" class="tooltip"></div>
 
-  <script src="https://d3js.org/d3.v7.min.js"></script>
-  <script>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
 
-  /* ---------------------------------------------------
-      ✅ 親ページからの DB_UPDATE を受信して自動生成
-  --------------------------------------------------- */
-  window.addEventListener('message', e=>{
-    if(e.origin !== location.origin) return;
-    const { type, payload } = e.data || {};
+window.addEventListener('message', e=>{
+  if(e.origin !== location.origin) return;
+  const { type, payload } = e.data || {};
+  if(type === 'DB_UPDATE'){
+    const seedText =
+      payload?.text ||
+      payload?.result ||
+      payload?.message ||
+      JSON.stringify(payload);
 
-    if(type === 'DB_UPDATE'){
-      // ✅ payload から seed を抽出（必要に応じて調整）
-      const seedText =
-        payload?.text ||
-        payload?.result ||
-        payload?.message ||
-        JSON.stringify(payload);
-
-      // ✅ seedInput にセット
-      document.getElementById('seedInput').value = seedText;
-
-      // ✅ 自動生成を開始
-      document.getElementById('addSeedBtn').click();
-    }
-  });
-
-  /* ---------------------------------------------------
-      ✅ 以下は元コード（生成ロジック）
-  --------------------------------------------------- */
-
-  let nodes = [];
-  let links = [];
-  let idCounter = 0;
-
-  const svg = d3.select('#graph');
-  const tooltip = d3.select('#tooltip');
-  const getW = () => window.innerWidth;
-  const getH = () => window.innerHeight;
-  svg.attr('width', getW()).attr('height', getH());
-
-  const LINK_PARENT_CHILD = 45;
-  const LINK_CHILD_GRAND = 60;
-
-  const simulation = d3.forceSimulation()
-    .force('link', d3.forceLink().id(d=>d.id).distance(link => {
-      const sDepth = (link && link.source && typeof link.source.depth === 'number') ? link.source.depth : 0;
-      const tDepth = (link && link.target && typeof link.target.depth === 'number') ? link.target.depth : 1;
-      return (sDepth === 0 && tDepth === 1) ? LINK_PARENT_CHILD : LINK_CHILD_GRAND;
-    }))
-    .force('charge', d3.forceManyBody().strength(-80))
-    .force('center', d3.forceCenter(getW()/2, getH()/2))
-    .force('collision', d3.forceCollide(22))
-    .on('tick', ticked);
-
-  const linkG = svg.append('g').attr('class','links');
-  const nodeG = svg.append('g').attr('class','nodes');
-
-  function makeId(){ return 'n' + (++idCounter); }
-  function findNodeById(id){ return nodes.find(n=>n.id===id); }
-
-  const API_URL = "https://dr-cube-1.onrender.com/chat";
-
-  async function fetchWords(word, count = 6){
-    try{
-      const res = await fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: `「${word}」から連想される短い単語を${count}つ、日本語で出してください。出力は単語のみで突飛な連想をお願いします。`
-        })
-      });
-
-      const json = await res.json();
-      let text = json.reply || json.message || json.text || "";
-      const parts = String(text).split(/[,\u3001\n]+/).map(s=>s.trim()).filter(Boolean);
-      return parts.slice(0, count);
-    }catch(err){
-      console.error('fetchWords error', err);
-      return [];
-    }
+    document.getElementById('seedInput').value = seedText;
+    document.getElementById('addSeedBtn').click();
   }
+});
 
-  async function fetchReason(a, b){
-    try{
-      const prompt = `次の2つの概念「${a}」と「${b}」の関連性を2〜3行で説明してください。`;
-      const res = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: prompt })
-      });
-      const json = await res.json();
-      return (json.reply || json.message || json.text || "").trim();
-    }catch(e){
-      return `${a} → ${b}`;
-    }
-  }
+let nodes = [];
+let links = [];
+let idCounter = 0;
 
-  function addNode(name, parentId=null, depth=0){
-    const n = { id: makeId(), name, depth };
-    let px = getW()/2, py = getH()/2;
-    if(parentId){
-      const p = findNodeById(parentId);
-      if(p && typeof p.x === 'number'){ px = p.x; py = p.y; }
-    }
-    const ang = Math.random()*Math.PI*2;
-    const baseDist = parentId ? 40 : 20;
-    n.x = px + Math.cos(ang)*baseDist;
-    n.y = py + Math.sin(ang)*baseDist;
+const svg = d3.select('#graph');
+const tooltip = d3.select('#tooltip');
+const getW = () => window.innerWidth;
+const getH = () => window.innerHeight;
+svg.attr('width', getW()).attr('height', getH());
 
-    nodes.push(n);
+const LINK_PARENT_CHILD = 45;
+const LINK_CHILD_GRAND = 60;
 
-    if(parentId){
-      const pNode = findNodeById(parentId);
-      const linkObj = { id: 'l' + links.length, source: pNode, target: n, reason: '生成中...' };
-      links.push(linkObj);
-      fetchReason(pNode.name, n.name).then(r => linkObj.reason = r);
-    }
+const simulation = d3.forceSimulation()
+  .force('link', d3.forceLink().id(d=>d.id).distance(l=>{
+    return (l.source.depth===0 && l.target.depth===1)
+      ? LINK_PARENT_CHILD : LINK_CHILD_GRAND;
+  }))
+  .force('charge', d3.forceManyBody().strength(-80))
+  .force('center', d3.forceCenter(getW()/2, getH()/2))
+  .force('collision', d3.forceCollide(22))
+  .on('tick', ticked);
 
-    return n;
-  }
+const linkG = svg.append('g');
+const nodeG = svg.append('g');
 
-  function restart(){
-    const linkSel = linkG.selectAll('g.link').data(links, d=>d.id);
-    linkSel.exit().remove();
-    const linkEnter = linkSel.enter().append('g').attr('class','link');
-    
-    //-------------------------追加文-------------------------
-    linkEnter
-  .on('mouseover', (e, d) => {
-    tooltip.style('display', 'block')
-      .text(d.reason);
-  })
-  .on('mousemove', (e) => {
-    tooltip.style('left', (e.pageX + 10) + 'px')
-      .style('top', (e.pageY + 10) + 'px');
-  })
-  .on('mouseout', () => {
-    tooltip.style('display', 'none');
+function makeId(){ return 'n'+(++idCounter); }
+function findNodeById(id){ return nodes.find(n=>n.id===id); }
+
+const API_URL = "https://dr-cube-1.onrender.com/chat";
+
+async function fetchWords(word, count){
+  const res = await fetch(API_URL,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      message:`「${word}」から連想される短い単語を${count}つ、日本語で出してください。`
+    })
   });
-  //---------------------------------------------------------
-
-    linkEnter.append('line').attr('class','hit').attr('stroke','transparent').attr('stroke-width',20);
-    linkEnter.append('line').attr('class','visible').attr('stroke','#bfbfbf').attr('stroke-width',2);
-const nodeSel = nodeG.selectAll('g.node').data(nodes, d=>d.id);
-nodeSel.exit().remove();
-
-const nodeEnter = nodeSel.enter().append('g')
-  .attr('class','node')
-  .on('click', (e, d) => {
-    // ✅ 親ページへ保存依頼を送信
-    window.parent.postMessage(
-      { type: "SAVE_WORD", payload: d.name },
-      location.origin
-    );
-  });
-
-// ✅ ノードの見た目（circle）
-nodeEnter.append('circle')
-  .attr('r',16)
-  .attr('fill','#ffdca8')
-  .attr('stroke','#e6a86b')
-  .attr('stroke-width',2);
-
-// ✅ ノードのラベル（text）
-nodeEnter.append('text')
-  .attr('dy',4)
-  .attr('text-anchor','middle')
-  .style('font-size','11px')
-  .text(d=>d.name);
-
-simulation.nodes(nodes);
-simulation.force('link').links(links);
-simulation.alpha(0.9).restart();
+  const json = await res.json();
+  return String(json.reply||'').split(/[,\n、]/).map(s=>s.trim()).filter(Boolean).slice(0,count);
 }
 
-  function ticked(){
-    nodeG.selectAll('g.node').attr('transform', d=>`translate(${d.x},${d.y})`);
-    linkG.selectAll('g.link').each(function(d){
-      d3.select(this).select('line.hit')
-        .attr('x1',d.source.x).attr('y1',d.source.y)
-        .attr('x2',d.target.x).attr('y2',d.target.y);
-      d3.select(this).select('line.visible')
-        .attr('x1',d.source.x).attr('y1',d.source.y)
-        .attr('x2',d.target.x).attr('y2',d.target.y);
+async function fetchReason(a,b){
+  const res = await fetch(API_URL,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({message:`「${a}」と「${b}」の関係を説明してください。`})
+  });
+  const json = await res.json();
+  return json.reply||'';
+}
+
+/* ===========================
+   🔧 addNode を拡張（realName）
+=========================== */
+function addNode(name, parentId=null, depth=0, realName=null){
+  const n = {
+    id: makeId(),
+    name,
+    realName: realName || name,
+    depth
+  };
+
+  const p = parentId && findNodeById(parentId);
+  n.x = p?.x || getW()/2;
+  n.y = p?.y || getH()/2;
+
+  nodes.push(n);
+
+  if(p){
+    const link = {id:'l'+links.length, source:p, target:n, reason:'生成中'};
+    links.push(link);
+    fetchReason(p.realName, n.realName).then(r=>link.reason=r);
+  }
+  return n;
+}
+
+function restart(){
+  linkG.selectAll('g').data(links,d=>d.id)
+    .join(enter=>{
+      const g=enter.append('g');
+      g.append('line').attr('stroke','#bbb').attr('stroke-width',2);
+      return g;
     });
+
+  nodeG.selectAll('g').data(nodes,d=>d.id)
+    .join(enter=>{
+      const g=enter.append('g');
+      g.append('circle').attr('r',16).attr('fill','#ffdca8');
+      g.append('text').attr('dy',4).attr('text-anchor','middle').style('font-size','11px');
+      return g;
+    })
+    .select('text').text(d=>d.name);
+
+  simulation.nodes(nodes);
+  simulation.force('link').links(links);
+  simulation.alpha(0.9).restart();
+}
+
+function ticked(){
+  nodeG.selectAll('g').attr('transform',d=>`translate(${d.x},${d.y})`);
+  linkG.selectAll('line')
+    .attr('x1',d=>d.source.x)
+    .attr('y1',d=>d.source.y)
+    .attr('x2',d=>d.target.x)
+    .attr('y2',d=>d.target.y);
+}
+
+/* ===========================
+   ✅ 親ノード一時マスク処理
+=========================== */
+document.getElementById('addSeedBtn').addEventListener('click', async ()=>{
+  const seed = document.getElementById('seedInput').value.trim();
+  if(!seed) return;
+
+  nodes=[]; links=[]; idCounter=0;
+
+  // 🔹 表示用は短く、内部は seed
+  const parent = addNode('画像から生成', null, 0, seed);
+  restart();
+
+  const children = await fetchWords(seed,6);
+  for(const c of children){
+    const child = addNode(c, parent.id, 1);
+    restart();
+    const grands = await fetchWords(c,3);
+    for(const g of grands){
+      addNode(g, child.id, 2);
+    }
+    restart();
   }
 
-  document.getElementById('addSeedBtn').addEventListener('click', async ()=>{
-    const seed = document.getElementById('seedInput').value.trim();
-    if(!seed){ return; }
+  // 🔹 最後に親ノード表示だけ差し替え
+  parent.name = parent.realName;
+  restart();
+});
 
-    const btn = document.getElementById('addSeedBtn');
-    btn.disabled = true;
-    btn.textContent = '生成中...';
-
-    try{
-      nodes = []; links = []; idCounter = 0; restart();
-
-      const parent = addNode(seed, null, 0);
-      restart();
-
-      const childWords = await fetchWords(seed, 6);
-      while(childWords.length < 6) childWords.push(seed + '_child');
-
-      for(const c of childWords){
-        const child = addNode(c, parent.id, 1);
-        restart();
-        await new Promise(r=>setTimeout(r, 80));
-
-        const grandWords = await fetchWords(c, 3);
-        while(grandWords.length < 3) grandWords.push(c + '_grand');
-        for(const g of grandWords){
-          addNode(g, child.id, 2);
-        }
-        restart();
-      }
-    }finally{
-      btn.disabled = false;
-      btn.textContent = '生成（親→子6→孫3×6）';
-    }
-  });
-
-  window.addEventListener('resize', ()=>{
-    svg.attr('width', getW()).attr('height', getH());
-    simulation.force('center', d3.forceCenter(getW()/2, getH()/2));
-    simulation.alpha(0.3).restart();
-  });
-
-  </script>
+</script>
 </body>
 </html>
