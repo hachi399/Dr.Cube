@@ -14,7 +14,7 @@
   <h2>Image → Summary Word</h2>
 
   <input type="file" id="fileInput" accept="image/*" />
-  <button id="sendBtn">解析</button>
+  <button id="sendBtn" onclick="runTask()">解析</button>
 
   <img id="preview" />
   <div id="output"></div>
@@ -26,6 +26,26 @@ const API_URL = "https://dr-cube-1.onrender.com/chat";
 
 document.getElementById("fileInput").addEventListener("change", handleFile);
 document.getElementById("sendBtn").addEventListener("click", processImage);
+
+
+  
+    function runTask() {
+      const btn = document.getElementById("actionBtn");
+
+      // ボタンを「解析中」に変更
+      btn.textContent = "解析中…";
+      btn.classList.add("loading");
+      btn.disabled = true;
+
+      // 疑似的な処理（2秒後に完了）
+      setTimeout(() => {
+        btn.textContent = "解析";
+        btn.classList.remove("loading");
+        btn.disabled = false;
+      }, 2000);
+    }
+  
+
 
 function handleFile(e) {
   const file = e.target.files[0];
