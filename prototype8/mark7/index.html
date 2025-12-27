@@ -253,6 +253,20 @@ function handleSwipe(dist, index){
   render();
 }
 
+// 🔧 ボタン状態切り替え
+function setLoading(isLoading) {
+  const btn = document.getElementById("toggleIframeInteraction");
+  if (isLoading) {
+    btn.textContent = "サイト…";
+    btn.classList.add("loading");
+    btn.disabled = true;
+  } else {
+    btn.textContent = "スワイプ";
+    btn.classList.remove("loading");
+    btn.disabled = false;
+  }
+}
+
 /* ===== 初期化 ===== */
 deck.forEach(createCard);
 render();
