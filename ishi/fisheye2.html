@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Fisheye Distortion Corrector</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: #1e1e1e;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            margin-top: 20px;
+            text-align: center;
+        }
+        canvas {
+            border: 2px solid #444;
+            max-width: 100%;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        .info-panel {
+            background: #2d2d2d;
+            padding: 10px 20px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+            border-left: 4px solid #00ff00;
+        }
+        .loading-status { color: #00ff00; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+    <h2>📷 魚眼レンズ補正 (固定パラメータ版)</h2>
+    
+    <div id="status" class="loading-status">OpenCVを読み込み中...</div>
+    
+    <input type="file" id="fileInput" accept="image/*">
+
+    <div class="container">
+        <div class="info-panel" id="paramsDisplay">
+            設定値: 読み込み中...
+        </div>
+        <canvas id="canvasOutput"></canvas>
+    </div>
+
+    <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();" type="text/javascript"></script>
+
+    <script type="text/javascript">
+        // ==========================================
+        // 🛠️ ここで固定値を設定してね！
+        // ==========================================
+        const CONFIG = {
+            f: 960,       // 焦点距離
+            k1: -0.327,   // 歪み係数1 (例として少しマイナスを入れています)
+            k2: 0.080,    // 歪み係数2
+            crop: 0.9     // 画角の残し具合 (0.9 = 90%)
+        };
+
+        let imgElement = new Image();
+        let opencvLoaded = false;
+
+        function onOpenCvReady() {
+            opencvLoaded = true;
+            document.getElementById('status').innerText = "✅ OpenCV 準備完了";
+            document.getElementById('paramsDisplay').innerText = 
+                `現在の適用パラメータ: f=${CONFIG.f}, k1=${CONFIG.k1}, k2=${CONFIG.k2}, crop=${CONFIG.crop}`;
+        }
+
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            if (!opencvLoaded) return;
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (ev) => { imgElement.src = ev.target.result; };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        imgElement.onload = function() {
+            processImage();
+        };
+
+        function processImage() {
+            let src = cv.imread(imgElement);
+            let dst = new cv.Mat();
+            const w = src.cols;
+            const h = src.rows;
+
+            // 1. カメラ行列 (K) の作成
+            let K = cv.matFromArray(3, 3, cv.CV_64F, [
+                CONFIG.f, 0, w / 2,
+                0, CONFIG.f * 0.62, h / 2,
+                0, 0, 1
+            ]);
+
+            // 2. 歪み係数 (D) の作成 (k1, k2 のみ)
+            // OpenCVの標準補正(radtan)に合わせて4要素[k1, k2, 0, 0]で設定
+            let D = cv.matFromArray(1, 4, cv.CV_64F, [CONFIG.k1, CONFIG.k2, 0, 0]);
+
+            // 3. 補正用マップの計算
+            let map1 = new cv.Mat();
+            let map2 = new cv.Mat();
+            let new_K = K.clone(); // 今回はシンプルに同じ行列を使用
+
+            cv.initUndistortRectifyMap(K, D, cv.Mat.eye(3, 3, cv.CV_64F), new_K, new cv.Size(w, h), cv.CV_32FC1, map1, map2);
+
+            // 4. 補正実行
+            cv.remap(src, dst, map1, map2, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(0, 0, 0, 255));
+
+            // 5. クロップ (指定した比率で中央を切り出す)
+            let ch = Math.floor(h * CONFIG.crop);
+            let cw = Math.floor(w * CONFIG.crop);
+            let y0 = Math.floor((h - ch) / 2);
+            let x0 = Math.floor((w - cw) / 2);
+            let rect = new cv.Rect(x0, y0, cw, ch);
+            let cropped = dst.roi(rect);
+
+            // 6. 表示用にリサイズ (960x540)
+            let finalOutput = new cv.Mat();
+            cv.resize(cropped, finalOutput, new cv.Size(960, 540), 0, 0, cv.INTER_LINEAR);
+
+            // 画面に表示
+            cv.imshow('canvasOutput', finalOutput);
+
+            // メモリ解放
+            src.delete(); dst.delete(); K.delete(); D.delete(); 
+            map1.delete(); map2.delete(); new_K.delete(); 
+            cropped.delete(); finalOutput.delete();
+        }
+    </script>
+</body>
+</html>
