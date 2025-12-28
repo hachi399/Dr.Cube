@@ -208,15 +208,21 @@ class StorageDB {
         tx.objectStore("snapshots").clear();
     }
     async saveCameraSetting(frontId, fishId) {
+        if (!this.db) {
+            console.warn("DB not opened yet.");
+            return;
+        }
+    
         const tx = this.db.transaction(["settings"], "readwrite");
         const store = tx.objectStore("settings");
+    
+        // undefined を空文字に変換
         store.put({
-            name: "camera",
+            name: "camera",        // ← keyPath は必須
             frontId: frontId || "",
             fishId: fishId || ""
         });
     }
-
 
     async loadCameraSetting() {
         return new Promise((resolve) => {
