@@ -54,7 +54,6 @@
       <button id="btn-train" class="secondary">学習実行(t)</button>
       <button id="btn-snap" class="secondary">スナップショット(s)</button>
       <button id="btn-show-data" class="secondary">保存データ表示</button>
-      <button id="btn-download-csv" class="secondary">CSV保存</button>
     </div>
     <div id="data-display-area" style="margin-top:20px; background:#444; padding:10px; border-radius:8px; display:none;">
         <h4>Calibration Data / Snapshots</h4>
@@ -135,7 +134,7 @@ const LEFT_EYE_IDS = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 1
 class StorageDB {
     constructor() {
         this.dbName = "GazeCalibrationDB";
-        this.version = 1;
+        this.version = 2;
         this.db = null;
     }
     async open() {
@@ -143,9 +142,18 @@ class StorageDB {
             const req = indexedDB.open(this.dbName, this.version);
             req.onupgradeneeded = (e) => {
                 this.db = e.target.result;
-                if(!this.db.objectStoreNames.contains("calibration")) this.db.createObjectStore("calibration", { keyPath: "id", autoIncrement: true });
-                if(!this.db.objectStoreNames.contains("model")) this.db.createObjectStore("model", { keyPath: "name" });
-                if(!this.db.objectStoreNames.contains("snapshots")) this.db.createObjectStore("snapshots", { keyPath: "time" });
+                if (!this.db.objectStoreNames.contains("calibration"))
+                    this.db.createObjectStore("calibration", { keyPath: "id", autoIncrement: true });
+
+                if (!this.db.objectStoreNames.contains("model"))
+                    this.db.createObjectStore("model", { keyPath: "name" });
+
+                if (!this.db.objectStoreNames.contains("snapshots"))
+                    this.db.createObjectStore("snapshots", { keyPath: "time" });
+
+                // ★ 追加：カメラ設定用
+                if (!this.db.objectStoreNames.contains("settings"))
+                    this.db.createObjectStore("settings", { keyPath: "key" });
             };
             req.onsuccess = (e) => { this.db = e.target.result; resolve(); };
             req.onerror = (e) => reject(e);
@@ -191,11 +199,26 @@ class StorageDB {
             console.warn("DB is not opened yet.");
             return;
         }
-        const tx = this.db.transaction(["calibration", "model", "snapshots"], "readwrite");
+        const tx = this.db.transaction(["calibration", "model", "snapshots", "settings"], "readwrite");
         tx.objectStore("calibration").clear();
         tx.objectStore("model").clear();
         tx.objectStore("snapshots").clear();
+        tx.objectStore("settings").clear();
     }
+
+    async saveSetting(key, value) {
+        const tx = this.db.transaction(["settings"], "readwrite");
+        tx.objectStore("settings").put({ key, value });
+    }
+
+    async loadSetting(key) {
+        return new Promise(resolve => {
+            const tx = this.db.transaction(["settings"], "readonly");
+            const req = tx.objectStore("settings").get(key);
+            req.onsuccess = () => resolve(req.result ? req.result.value : null);
+        });
+    }
+
     
 }
 
@@ -417,6 +440,11 @@ let displayBuffer = []; // 15フレーム平均表示用の専用バッファ
 let calibrationMode = true;
 let calibIndex = 0;
 let isSampling = false;
+let imgElement = new Image();
+let appStarted = false;
+let faceMeshInitialized = false;
+let selFront;
+let selFish;
 
 // フィルタ
 const pitchFilter = new OneEuroFilter();
@@ -429,7 +457,12 @@ function onOpenCvReady() {
     document.getElementById('btn-start').disabled = false;
 }
 
+
 async function startApp() {
+
+    if (appStarted) return;   // ★ 連打・再実行防止
+    appStarted = true;
+    
     videoFront = document.getElementById('video-front');
     videoFish = document.getElementById('video-fish');
     canvasFront = document.getElementById('canvas-front');
@@ -437,11 +470,25 @@ async function startApp() {
     canvasFish = document.getElementById('canvas-fish');
     ctxFish = canvasFish.getContext('2d');
 
+    await ensureCameraPermission();
     await db.open();
-    // ロード
+    await setupCameraSelectors();
+    // --- 復元 ---
     calibrationData = await db.loadCalibData() || [];
     currentModel = await db.loadModel();
-    if(currentModel) console.log("Model loaded from DB");
+
+    // ★ 状態を復元に合わせて決める
+    if (currentModel && calibrationData.length >= 9) {
+        calibrationMode = false;
+        calibIndex = 9;
+    } else if (calibrationData.length > 0) {
+        calibrationMode = true;
+        calibIndex = calibrationData.length;
+    } else {
+        calibrationMode = true;
+        calibIndex = 0;
+    }
+
 
     // カメラ起動
     const frontId = document.getElementById('sel-cam-front').value;
@@ -450,36 +497,6 @@ async function startApp() {
     await startCamera(videoFront, frontId, 640, 480);
     await startCamera(videoFish, fishId, 1920, 1080); // 要求解像度
 
-    // MediaPipe設定
-    faceMesh = new FaceMesh({locateFile: (file) => {
-        return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
-    }});
-    faceMesh.setOptions({
-        maxNumFaces: 1,
-        refineLandmarks: true,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5
-    });
-    faceMesh.onResults(onFaceResults);
-
-    // ループ開始
-    requestAnimationFrame(loop);
-}
-
-async function startCamera(videoEl, deviceId, w, h) {
-    const stream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: deviceId ? {exact: deviceId} : undefined, width: w, height: h }
-    });
-    videoEl.srcObject = stream;
-    await new Promise(r => videoEl.onloadedmetadata = r);
-    videoEl.width = videoEl.videoWidth;
-    videoEl.height = videoEl.videoHeight;
-}
-
-// ==========================================
-// 歪み補正のみを行う関数
-// ==========================================
-async function undistortFishFrame(videoFish) {
     // 一時 Canvas に Video を描画して Mat 化
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = videoFish.videoWidth;
@@ -514,93 +531,93 @@ async function undistortFishFrame(videoFish) {
     let rect = new cv.Rect(x0, y0, cw, ch);
     let cropped = dst.roi(rect);
 
-    // リサイズ（必要ならキャンバスサイズに合わせる）
+    // リサイズ
     let finalOutput = new cv.Mat();
-    cv.resize(cropped, finalOutput, new cv.Size(videoFish.videoWidth, videoFish.videoHeight), 0, 0, cv.INTER_LINEAR);
+    cv.resize(cropped, finalOutput, new cv.Size(canvasFish.width, canvasFish.height), 0, 0, cv.INTER_LINEAR);
 
-    // メモリ解放（Matのコピーは返すので finalOutput は呼び出し側で delete する）
-    src.delete(); dst.delete(); cropped.delete();
+    // ctxFish に描画
+    let imgData = new ImageData(new Uint8ClampedArray(finalOutput.data), finalOutput.cols, finalOutput.rows);
+    ctxFish.putImageData(imgData, 0, 0);
+
+    // MediaPipe設定
+    await initFaceMeshOnce();
+
+
+    // メモリ解放
+    src.delete(); dst.delete(); cropped.delete(); finalOutput.delete();
     map1.delete(); map2.delete(); K.delete(); D.delete(); new_K.delete();
 
-    return finalOutput; // cv.Mat
+    // ループ開始
+    requestAnimationFrame(loop);
 }
 
-// ==========================================
-// cv.Mat を canvas に描画する関数
-// ==========================================
-function drawMatOnCanvas(canvas, mat) {
-    const ctx = canvas.getContext('2d');
-    const imgData = new ImageData(new Uint8ClampedArray(mat.data), mat.cols, mat.rows);
-    ctx.putImageData(imgData, 0, 0);
+async function startCamera(videoEl, deviceId, w, h) {
+    const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: deviceId ? {exact: deviceId} : undefined, width: w, height: h }
+    });
+    videoEl.srcObject = stream;
+    await new Promise(r => videoEl.onloadedmetadata = r);
+    videoEl.width = videoEl.videoWidth;
+    videoEl.height = videoEl.videoHeight;
 }
 
-// ==========================================
-// 注視点だけを描画する
-// ==========================================
-function drawGazePointsOnly(canvasFish, gazePoints) {
-    const ctx = canvasFish.getContext('2d');
-    for (let pt of gazePoints) {
-        ctx.fillStyle = "red";
-        ctx.beginPath();
-        ctx.arc(pt[0], pt[1], 8, 0, 2 * Math.PI);
-        ctx.fill();
+async function setupCameraSelectors() {
+    selFront = document.getElementById("sel-cam-front");
+    selFish  = document.getElementById("sel-cam-fish");
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoDevices = devices.filter(d => d.kind === "videoinput");
+    
+    selFront.innerHTML = "";
+    selFish.innerHTML  = "";
+
+    videoDevices.forEach(d => {
+        selFront.appendChild(new Option(d.label || "Camera", d.deviceId));
+        selFish.appendChild(new Option(d.label || "Camera", d.deviceId));
+    });
+
+    // --- IndexedDB から復元 ---
+    const savedFront = await db.loadSetting("frontCamId");
+    const savedFish  = await db.loadSetting("fishCamId");
+
+    if (savedFront && [...selFront.options].some(o => o.value === savedFront)) {
+        selFront.value = savedFront;
     }
+    if (savedFish && [...selFish.options].some(o => o.value === savedFish)) {
+        selFish.value = savedFish;
+    }
+
+    // --- 変更時に保存 ---
+    selFront.onchange = () => {
+        db.saveSetting("frontCamId", selFront.value);
+    };
+    selFish.onchange = () => {
+        db.saveSetting("fishCamId", selFish.value);
+    };
 }
 
-
-// ==========================================
-// ズーム・パン対応の描画関数
-// ==========================================
-function drawUndistortedWithZoom(canvas, matFrame, gazePoints=[], zoomLevel=2.0, offset=[0,0]) {
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0,0,canvas.width, canvas.height);
-
-    const srcW = matFrame.cols;
-    const srcH = matFrame.rows;
-
-    // 表示する矩形サイズ（ズームで小さくなるほど拡大）
-    const viewW = srcW / zoomLevel;
-    const viewH = srcH / zoomLevel;
-
-    // 注視点中心にズーム
-    let centerX = gazePoints.length > 0 ? gazePoints[0][0] : srcW / 2;
-    let centerY = gazePoints.length > 0 ? gazePoints[0][1] : srcH / 2;
-
-    // 手動オフセットを加える
-    centerX += offset[0];
-    centerY += offset[1];
-
-    // 描画元の矩形（切り出し元）
-    let sx = Math.max(0, Math.min(srcW - viewW, centerX - viewW/2));
-    let sy = Math.max(0, Math.min(srcH - viewH, centerY - viewH/2));
-
-    // Mat → ImageData
-    const imgData = new ImageData(new Uint8ClampedArray(matFrame.data), matFrame.cols, matFrame.rows);
-
-    // 一時 Canvas に描画して切り抜き
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = srcW;
-    tempCanvas.height = srcH;
-    tempCanvas.getContext('2d').putImageData(imgData, 0, 0);
-
-    ctx.drawImage(
-        tempCanvas,
-        sx, sy, viewW, viewH,       // 元画像の切り出し矩形
-        0, 0, canvas.width, canvas.height  // 表示先キャンバス全体
-    );
-
-    // 注視点も同じスケールで描画
-    //for (let pt of gazePoints) {
-    //    const px = (pt[0] - sx) * (canvas.width / viewW);
-    //    const py = (pt[1] - sy) * (canvas.height / viewH);
-
-    //    ctx.fillStyle = "red";
-    //    ctx.beginPath();
-    //    ctx.arc(px, py, 8, 0, 2*Math.PI);
-    //    ctx.fill();
-    //}
+async function ensureCameraPermission() {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    stream.getTracks().forEach(t => t.stop());
 }
 
+async function initFaceMeshOnce() {
+    if (faceMeshInitialized) return;
+
+    faceMesh = new FaceMesh({
+        locateFile: file =>
+            `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    });
+
+    faceMesh.setOptions({
+        maxNumFaces: 1,
+        refineLandmarks: true,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+    });
+
+    faceMesh.onResults(onFaceResults);
+    faceMeshInitialized = true;
+}
 
 
 // ----------------------------------------------------------------
@@ -745,10 +762,7 @@ async function loop() {
             canvasFish.height = videoFish.videoHeight;
         }
         // 魚眼映像描画
-        const matFrame = await undistortFishFrame(videoFish); // 歪み補正だけ
-        drawMatOnCanvas(canvasFish, matFrame); // 歪み補正のみ
-        
-        //ctxFish.drawImage(videoFish, 0, 0, canvasFish.width, canvasFish.height);
+        ctxFish.drawImage(videoFish, 0, 0, canvasFish.width, canvasFish.height);
 
         // キャリブレーションモードUI
         if(calibrationMode) {
@@ -792,16 +806,12 @@ async function loop() {
                 const u = Math.max(0, Math.min(uv[0], canvasFish.width));
                 const v = Math.max(0, Math.min(uv[1], canvasFish.height));
                 
-                // 注視点だけ追加
-                drawGazePointsOnly(canvasFish, [[u, v]]);
-
-                //ctxFish.fillStyle = "#00ff00";
-                //ctxFish.beginPath(); ctxFish.arc(u, v, 12, 0, 2*Math.PI); ctxFish.fill();
-                //ctxFish.fillText("Gaze", u+15, v);
+                ctxFish.fillStyle = "#00ff00";
+                ctxFish.beginPath(); ctxFish.arc(u, v, 12, 0, 2*Math.PI); ctxFish.fill();
+                ctxFish.fillText("Gaze", u+15, v);
                 
             }
         }
-        matFrame.delete(); // 使い終わったらメモリ解放
         
     }
     
@@ -975,7 +985,6 @@ function updateEditCanvas() {
 
     // 元画像から切り出してキャンバスいっぱいに描画
     ctxEdit.drawImage(editImageData, sx, sy, viewW, viewH, 0, 0, w, h);
-    
 }
 
 // JSONファイル として保存
@@ -996,22 +1005,28 @@ function downloadSnapshotAsJSON(snapshotData) {
 
 // イベントリスナー
 window.onload = async () => {
-    // カメラ列挙
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const videos = devices.filter(d => d.kind === 'videoinput');
-    const selFront = document.getElementById('sel-cam-front');
-    const selFish = document.getElementById('sel-cam-fish');
-    
-    videos.forEach((v, i) => {
-        const opt1 = new Option(v.label || `Camera ${i+1}`, v.deviceId);
-        const opt2 = new Option(v.label || `Camera ${i+1}`, v.deviceId);
-        selFront.add(opt1);
-        selFish.add(opt2);
-    });
-    // デフォルトで別のカメラを選択しておく
-    if(videos.length > 1) selFish.selectedIndex = 1;
+    await db.open();
 
-    document.getElementById('btn-start').onclick = startApp;
+    // ★ 起動時にカメラ一覧を作る（復元もここ）
+    await setupCameraSelectors();
+
+    document.getElementById("btn-start").addEventListener("click", async () => {
+        await db.open();
+
+        const frontId = selFront.value;
+        const fishId  = selFish.value;
+
+        try {
+            await db.saveSetting("frontCamId", selFront.value);
+            await db.saveSetting("fishCamId",  selFish.value);
+            await startApp();
+        } catch (e) {
+            alert("カメラ設定の保存に失敗しました");
+            console.error(e);
+        }
+    });
+
+    //document.getElementById('btn-start').onclick = startApp;
     
     document.getElementById('btn-calib-start').onclick = () => {
         calibrationMode = true;
@@ -1047,36 +1062,7 @@ window.onload = async () => {
             
             // --- 画像取得 ---
             //const dataUrl = canvasFish.toDataURL("image/jpeg");
-            //const rawImageDataUrl = captureRawFishImage(videoFish);
-            const matFrame = await undistortFishFrame(videoFish);
-
-            const imgData = new ImageData(new Uint8ClampedArray(matFrame.data), matFrame.cols, matFrame.rows);
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = matFrame.cols;
-            tempCanvas.height = matFrame.rows;
-            tempCanvas.getContext('2d').putImageData(imgData, 0, 0);
-
-            editImageData = new Image();
-            editImageData.src = tempCanvas.toDataURL(); // これで歪み補正済み画像がセットされる
-            editImageData.onload = () => {
-                canvasEdit.width = 640; 
-                canvasEdit.height = 360;
-                document.getElementById('edit-panel').style.display = 'block';
-                document.getElementById('edit-gaze-pos').innerText = `(${uv[0]}, ${uv[1]})`;
-                updateEditCanvas();
-                matFrame.delete(); // メモリ解放
-            };
-
-            // --- 編集用画像準備 ---
-            //editImageData = new Image();
-            //editImageData.src = await captureUndistortedFishImage(videoFish);
-            //editImageData.onload = () => {
-            //    canvasEdit.width = 640;
-            //    canvasEdit.height = 360;
-            //    document.getElementById('edit-panel').style.display = 'block';
-            //    document.getElementById('edit-gaze-pos').innerText = `(${uv[0]}, ${uv[1]})`;
-            //    updateEditCanvas();
-            //};
+            const rawImageDataUrl = captureRawFishImage(videoFish);
 
 
             // ======== ログ出力 ========
@@ -1087,11 +1073,21 @@ window.onload = async () => {
             console.log("editGazeUV:", editGazeUV);
             console.log("offsetUV:", offsetUV);
             console.log("zoomLevel:", zoomLevel);
-            console.log("image editImageData src length:", editImageData.src.length);
+            console.log("image rawImageDataUrl length:", rawImageDataUrl.length);
             console.log("canvasFish size:", canvasFish.width, "x", canvasFish.height);
             console.groupEnd();
             // ==========================
-
+            
+            // --- 編集用画像準備 ---
+            editImageData = new Image();
+            editImageData.src = rawImageDataUrl;
+            editImageData.onload = () => {
+                canvasEdit.width = 640; 
+                canvasEdit.height = 360;
+                document.getElementById('edit-panel').style.display = 'block';
+                document.getElementById('edit-gaze-pos').innerText = `(${uv[0]}, ${uv[1]})`;
+                updateEditCanvas();
+            };
         }
     };
     document.getElementById('btn-snap').onclick = triggerSnap;
