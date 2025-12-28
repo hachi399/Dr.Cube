@@ -484,6 +484,7 @@ async function startApp() {
     // カメラ起動
     const frontId = document.getElementById('sel-cam-front').value;
     const fishId = document.getElementById('sel-cam-fish').value;
+  　console.log("Camera IDs:", frontId, fishId);
     // ★ ここで保存
     await db.saveCameraSetting(frontId, fishId);
     
