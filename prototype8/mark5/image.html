@@ -1249,6 +1249,7 @@ window.onload = async () => {
         }
         if (confirm("全学習データと設定を消去しますか？")) {
             await db.clearAll();
+            await db.saveCameraSetting(frontId, fishId);
             location.reload();
         }
     };
