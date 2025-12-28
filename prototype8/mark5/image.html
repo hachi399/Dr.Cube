@@ -216,13 +216,14 @@ class StorageDB {
         const tx = this.db.transaction(["settings"], "readwrite");
         const store = tx.objectStore("settings");
     
-        // undefined を空文字に変換
+        // keyPath に必須の name を必ず設定
         store.put({
-            name: "camera",        // ← keyPath は必須
-            frontId: frontId || "",
-            fishId: fishId || ""
+            name: "camera",       // ← ここは必ず文字列
+            frontId: frontId ?? "",
+            fishId: fishId ?? ""
         });
     }
+
 
     async loadCameraSetting() {
         return new Promise((resolve) => {
