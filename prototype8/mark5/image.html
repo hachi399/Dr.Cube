@@ -209,6 +209,8 @@ class StorageDB {
     }
     async saveCameraSetting(frontId, fishId) {
         const tx = this.db.transaction(["settings"], "readwrite");
+      　console.log("Saving camera setting:", {name:"camera", frontId, fishId});
+
         tx.objectStore("settings").put({
             name: "camera",
             frontId,
