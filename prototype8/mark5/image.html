@@ -208,15 +208,16 @@ class StorageDB {
         tx.objectStore("snapshots").clear();
     }
     async saveCameraSetting(frontId, fishId) {
+        if(!frontId) frontId = "";
+        if(!fishId) fishId = "";
         const tx = this.db.transaction(["settings"], "readwrite");
-      　console.log("Saving camera setting:", {name:"camera", frontId, fishId});
-
         tx.objectStore("settings").put({
             name: "camera",
             frontId,
             fishId
         });
     }
+
     async loadCameraSetting() {
         return new Promise((resolve) => {
             const tx = this.db.transaction(["settings"], "readonly");
