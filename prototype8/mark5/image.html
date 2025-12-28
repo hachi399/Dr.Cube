@@ -208,10 +208,11 @@ class StorageDB {
         tx.objectStore("snapshots").clear();
     }
     async saveCameraSetting(frontId, fishId) {
-        if (!this.db) {
-            console.warn("DB not opened yet.");
+        if (!frontId || !fishId) {
+            console.warn("Camera IDs are missing, skipping DB save.");
             return;
         }
+
     
         const tx = this.db.transaction(["settings"], "readwrite");
         const store = tx.objectStore("settings");
