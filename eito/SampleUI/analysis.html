@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Auto Capture AI Chat - UI/UX Only</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #000000;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+      color: #ffffff;
+      overflow-y: auto;
+    }
+    main {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+      padding: 2em 1em;
+    }
+    h1 {
+      font-size: 1.5em;
+      font-weight: 500;
+      margin-bottom: 1.5em;
+      color: #ffffff;
+      letter-spacing: 0.05em;
+    }
+    #chat {
+      width: 90%;
+      max-width: 700px;
+      height: 400px;
+      overflow-y: auto;
+      margin-bottom: 1.5em;
+      padding: 1.5em;
+      background-color: #1a1a1a;
+      border: 1px solid #333333;
+      border-radius: 8px;
+    }
+    #chat::-webkit-scrollbar {
+      width: 8px;
+    }
+    #chat::-webkit-scrollbar-track {
+      background: #0a0a0a;
+      border-radius: 4px;
+    }
+    #chat::-webkit-scrollbar-thumb {
+      background: #0066cc;
+      border-radius: 4px;
+    }
+    #chat::-webkit-scrollbar-thumb:hover {
+      background: #0052a3;
+    }
+    #chat p {
+      margin: 0.8em 0;
+      line-height: 1.6;
+      color: #ffffff;
+      animation: fadeIn 0.3s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    #chat b {
+      color: #ffffff;
+      font-weight: 500;
+    }
+    .data-badge {
+      display: inline-block;
+      padding: 6px 12px;
+      margin: 4px 0;
+      border-radius: 4px;
+      font-size: 0.85em;
+      font-weight: 500;
+      border: 1px solid #0066cc;
+      background: rgba(0, 102, 204, 0.1);
+      color: #66b3ff;
+      animation: slideIn 0.4s ease;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(-20px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    .ai-badge {
+      display: inline-block;
+      padding: 6px 12px;
+      margin: 4px 0;
+      border-radius: 4px;
+      font-size: 0.85em;
+      font-weight: 500;
+      border: 1px solid #00cc66;
+      background: rgba(0, 204, 102, 0.1);
+      color: #66ff99;
+      animation: slideIn 0.4s ease;
+    }
+    .data-content {
+      margin-top: 12px;
+      padding: 12px;
+      background: #0a0a0a;
+      border: 1px solid #333333;
+      border-left: 3px solid #0066cc;
+      border-radius: 4px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      color: #e0e0e0;
+      font-size: 0.95em;
+      line-height: 1.8;
+      animation: fadeIn 0.5s ease;
+    }
+    .ai-content {
+      margin-top: 12px;
+      padding: 12px;
+      background: #0a0a0a;
+      border: 1px solid #333333;
+      border-left: 3px solid #00cc66;
+      border-radius: 4px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      color: #e0e0e0;
+      font-size: 0.95em;
+      line-height: 1.8;
+      animation: fadeIn 0.5s ease;
+    }
+    .data-content strong, .ai-content strong {
+      color: #ffffff;
+      font-weight: 700;
+    }
+    .data-item {
+      margin: 8px 0;
+      padding: 4px 0;
+      border-bottom: 1px solid #333333;
+    }
+    .data-item:last-child {
+      border-bottom: none;
+    }
+    .data-label {
+      color: #66b3ff;
+      font-size: 0.85em;
+      margin-right: 8px;
+    }
+    .data-value {
+      color: #ffffff;
+    }
+    #input {
+      width: 70%;
+      padding: 0.8em 1em;
+      border-radius: 6px;
+      border: 1px solid #333333;
+      background: #1a1a1a;
+      color: #ffffff;
+      font-size: 1em;
+      margin-right: 0.5em;
+      transition: all 0.3s ease;
+    }
+    #input:focus {
+      outline: none;
+      border-color: #0066cc;
+      box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.2);
+    }
+    button {
+      padding: 0.8em 1.8em;
+      border: 1px solid #0066cc;
+      border-radius: 6px;
+      background: #0066cc;
+      color: #ffffff;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    button:hover {
+      background: #0052a3;
+      border-color: #0052a3;
+      transform: translateY(-1px);
+    }
+    button:active {
+      transform: translateY(0);
+    }
+    .chat-controls {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 2em;
+      gap: 0.5em;
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <h1>Dr.Cube AI解析<br>ぐんまちゃん</h1>
+
+    <div id="chat">
+      <p>お手伝いできることはありますか？</p>
+    </div>
+
+    <div class="chat-controls">
+      <input id="input" placeholder="メッセージを入力..." />
+      <button onclick="sendMessage()">送信</button>
+    </div>
+  </main>
+
+  <script>
+    // HTMLエスケープ関数
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    /* ----------------------------------------------------
+        ✅ 親ページからのwheelイベントを受信してスクロール
+    ---------------------------------------------------- */
+    window.addEventListener('message', event => {
+      if (event.origin !== location.origin) return;
+      const { type, deltaY } = event.data || {};
+      
+      if (type === 'PASS_WHEEL') {
+        const chat = document.getElementById("chat");
+        chat.scrollTop += deltaY;
+      }
+    });
+
+    /* ----------------------------------------------------
+        ✅ UI/UXのみ - モックデータを表示
+    ---------------------------------------------------- */
+    window.addEventListener("DOMContentLoaded", () => {
+      const chat = document.getElementById("chat");
+
+      // モックデータを表示
+      setTimeout(() => {
+        const mockData = {
+          data: "サンプル画像データ",
+          time: Date.now()
+        };
+
+        const date = new Date(mockData.time);
+        const timeStr = date.toLocaleString('ja-JP');
+        
+        let dataHtml = '<div><span class="data-badge">最新データ</span><div class="data-content">';
+        dataHtml += `<div class="data-item"><span class="data-label">データ:</span><span class="data-value">${escapeHtml(String(mockData.data))}</span></div>`;
+        dataHtml += `<div class="data-item"><span class="data-label">時刻:</span><span class="data-value">${escapeHtml(timeStr)}</span></div>`;
+        dataHtml += '</div></div>';
+        chat.innerHTML += dataHtml;
+        chat.scrollTop = chat.scrollHeight;
+
+        // モックAI応答を表示
+        setTimeout(() => {
+          const mockReply = "これはサンプルのAI解析結果です。実際のシステムでは、画像から読み取られたデータを基にAIが解析を行います。";
+          let replyText = mockReply;
+          replyText = replyText.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+          replyText = escapeHtml(replyText);
+          
+          chat.innerHTML += `
+            <div style="margin-top: 16px;">
+              <span class="ai-badge">AI解析</span>
+              <div class="ai-content">${replyText}</div>
+            </div>
+          `;
+          chat.scrollTop = chat.scrollHeight;
+        }, 1000);
+      }, 500);
+    });
+
+    /* ----------------------------------------------------
+        ✅ 手動チャット送信（UI/UXのみ）
+    ---------------------------------------------------- */
+    async function sendMessage() {
+      const input = document.getElementById("input");
+      const chat = document.getElementById("chat");
+      const textContent = input.value;
+
+      if (!textContent) return;
+
+      chat.innerHTML += `<p><b>あなた:</b> ${textContent}</p>`;
+      input.value = "";
+      chat.scrollTop = chat.scrollHeight;
+
+      // モック応答を表示
+      setTimeout(() => {
+        const mockReplies = [
+          "ご質問ありがとうございます。UI/UXのみのデモバージョンです。",
+          "実際のシステムでは、AIが解析を行います。",
+          "このデモでは、アニメーションとUIの動作を確認できます。"
+        ];
+        const mockReply = mockReplies[Math.floor(Math.random() * mockReplies.length)];
+        
+        let replyText = mockReply;
+        replyText = replyText.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        replyText = escapeHtml(replyText);
+        
+        chat.innerHTML += `
+          <div style="margin-top: 16px;">
+            <span class="ai-badge">AI</span>
+            <div class="ai-content">${replyText}</div>
+          </div>
+        `;
+        chat.scrollTop = chat.scrollHeight;
+      }, 500);
+    }
+
+    document.getElementById("input").addEventListener("keydown", function (event) {
+      if (event.key === "Enter") {
+        sendMessage();
+      }
+    });
+  </script>
+</body>
+</html>
+

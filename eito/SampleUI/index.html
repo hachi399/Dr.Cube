@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Swipe Card App — UI/UX Only</title>
+
+  <style>
+    html,
+    body {
+      height: 100%;
+    }
+
+    body {
+      margin: 0;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    #cardArea {
+      display: flex;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    .card {
+      flex: 1;
+      height: 100%;
+      background: #2a2a2a;
+      border: 1px solid #3a3a3a;
+      border-radius: 8px;
+      overflow: hidden;
+      position: relative;
+      display: none;
+      flex-direction: column;
+      transition: opacity 0.3s ease;
+    }
+
+    .card.visible {
+      display: flex;
+    }
+
+    .card-type {
+      padding: 8px 12px;
+      background: #1a1a1a;
+      border-bottom: 1px solid #3a3a3a;
+      color: #e0e0e0;
+      font-size: 0.9em;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    
+    .card-nav {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+    
+    .card-nav-btn {
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border: 1px solid #3a3a3a;
+      background: #2a2a2a;
+      color: #e0e0e0;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      transition: all 0.2s ease;
+    }
+    
+    .card-nav-btn:hover {
+      background: #3a3a3a;
+      transform: scale(1.1);
+    }
+    
+    .card-nav-btn:disabled {
+      opacity: 0.3;
+      cursor: default;
+    }
+    
+    .card-add-btn {
+      padding: 4px 8px;
+      border: 1px solid #3a3a3a;
+      background: #2a2a2a;
+      color: #e0e0e0;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      transition: all 0.2s ease;
+    }
+    
+    .card-add-btn:hover {
+      background: #3a3a3a;
+      transform: scale(1.05);
+    }
+    
+    .card-footer-nav {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      z-index: 100;
+      pointer-events: auto;
+    }
+    
+    .card-footer-nav .card-nav-btn {
+      width: 32px;
+      height: 32px;
+      background: rgba(42, 42, 42, 0.9);
+      border: 1px solid #3a3a3a;
+      backdrop-filter: blur(10px);
+    }
+
+    .iframe-wrap {
+      flex: 1;
+    }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .swipe-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 10;
+      pointer-events: auto;
+      touch-action: pan-y pinch-zoom;
+    }
+
+    #controls {
+      margin: 12px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      z-index: 1000;
+      position: relative;
+    }
+
+    button {
+      padding: 8px 16px;
+      border: 1px solid #3a3a3a;
+      border-radius: 6px;
+      background: #2a2a2a;
+      color: #e0e0e0;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    button:hover {
+      background: #3a3a3a;
+      transform: translateY(-1px);
+    }
+
+    #log {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 8px;
+    }
+
+    /* トグルボタンのスタイル */
+    #toggleIframeInteraction {
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-weight: 500;
+      cursor: pointer;
+      position: relative;
+      min-width: 140px;
+      transition: all 0.3s ease;
+    }
+
+    /* ロック中（スワイプモード） */
+    #toggleIframeInteraction {
+      border: 1px solid #5a3a3a;
+      background: #3a2a2a;
+      color: #ff9999;
+    }
+
+    #toggleIframeInteraction::before {
+      content: 'ロック中';
+      display: inline-block;
+      font-weight: 700;
+    }
+
+    /* 操作可能（iframe操作モード） */
+    #toggleIframeInteraction.toggle-on {
+      background: #2d4a2d;
+      border: 1px solid #4a7c4a;
+      color: #99ff99;
+    }
+
+    #toggleIframeInteraction.toggle-on::before {
+      content: '操作可能';
+      font-weight: 700;
+    }
+
+    #toggleIframeInteraction:hover {
+      opacity: 0.9;
+      transform: scale(1.02);
+    }
+
+    #toggleIframeInteraction.toggle-on:hover {
+      background: #3d5a3d;
+    }
+
+    /* トグルボタンの説明 */
+    .toggle-description {
+      font-size: 0.85em;
+      color: #888;
+      margin-left: 8px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="cardArea"></div>
+
+  <div id="controls">
+    <button id="leftBtn">←</button>
+    <button id="rightBtn">→</button>
+    <div style="display: flex; align-items: center;">
+      <button id="toggleIframeInteraction"></button>
+      <span class="toggle-description" id="toggleDescription">（スライドによる発想と、nodeによる深掘り可能）</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px; margin-left: 12px;">
+      <button id="viewCountBtn" style="min-width: 60px;">4画面</button>
+    </div>
+  </div>
+
+  <div id="log"></div>
+
+  <script>
+    /* =====================================================
+       UI/UX Only - システム機能は削除
+    ===================================================== */
+    function sendToIframe(iframe, type, payload) {
+      // UI/UXのみのため、実際の通信は行わない
+      if (!iframe || !iframe.contentWindow) return;
+      // アニメーション用のメッセージのみ送信（実際の処理はしない）
+      iframe.contentWindow.postMessage({ type, payload }, location.origin);
+    }
+
+    const logEl = document.getElementById("log");
+    function log(msg) { logEl.textContent = msg; console.log(msg); }
+
+    /* =====================================================
+       アプリ本体 - UI/UXのみ
+    ===================================================== */
+    const PAGE_URL = {
+      idea: "idea.html",
+      analysis: "analysis.html",
+      image: "image.html"
+    };
+
+    let overlayEnabled = true;
+    let ideaCount = 1;
+    let deepDiveCount = 1;
+    let visibleCount = 4;
+    let ideaHistory = [];
+    let deepDiveHistory = [];
+    let centerIndex = 0;
+    
+    // 常に4画面を維持: 画像1、解析1、発想1、深掘り1
+    let deck = [
+      { id: crypto.randomUUID(), type: 'image', label: '画像', fixed: true, mode: null },
+      { id: crypto.randomUUID(), type: 'analysis', label: '解析', fixed: true, mode: null },
+      { id: crypto.randomUUID(), type: 'idea', label: '発想(1)', fixed: false, mode: 'new', historyIndex: 0 },
+      { id: crypto.randomUUID(), type: 'idea', label: '深掘り(1)', fixed: false, mode: 'deep', historyIndex: 0 }
+    ];
+
+    const cardArea = document.getElementById("cardArea");
+    const cardMap = new Map();
+
+    /* ===== util ===== */
+    function getVisibleIndices() {
+      const indices = [];
+      const startIndex = 4 - visibleCount;
+      for (let i = startIndex; i < deck.length; i++) {
+        indices.push(i);
+      }
+      return indices;
+    }
+    
+    function updateNavButtons(card, prevBtn, nextBtn, footerPrevBtn, footerNextBtn) {
+      let prevDisabled, nextDisabled;
+      if (card.mode === 'new') {
+        prevDisabled = card.historyIndex <= 0;
+        nextDisabled = card.historyIndex >= ideaHistory.length - 1;
+      } else if (card.mode === 'deep') {
+        prevDisabled = card.historyIndex <= 0;
+        nextDisabled = card.historyIndex >= deepDiveHistory.length - 1;
+      } else {
+        prevDisabled = true;
+        nextDisabled = true;
+      }
+      
+      prevBtn.disabled = prevDisabled;
+      nextBtn.disabled = nextDisabled;
+      if (footerPrevBtn) footerPrevBtn.disabled = prevDisabled;
+      if (footerNextBtn) footerNextBtn.disabled = nextDisabled;
+    }
+
+    /* ===== 初回のみカード生成 ===== */
+    function createCard(card) {
+      const el = document.createElement("div");
+      el.className = "card";
+
+      const label = document.createElement("div");
+      label.className = "card-type";
+      const labelText = document.createElement("span");
+      labelText.textContent = card.label;
+      label.appendChild(labelText);
+      
+      // 発想カードの場合、「増やす」ボタンを追加
+      if (card.type === 'idea' && card.mode === 'new') {
+        const nav = document.createElement("div");
+        nav.className = "card-nav";
+        
+        const addBtn = document.createElement("button");
+        addBtn.className = "card-add-btn";
+        addBtn.textContent = "増やす";
+        addBtn.disabled = false;
+        
+        // 「増やす」ボタンのクリック処理（UIのみ）
+        addBtn.onclick = () => {
+          if (!overlayEnabled) return;
+          
+          // UIのみのアニメーション
+          ideaCount++;
+          const newIdeaCard = {
+            id: crypto.randomUUID(),
+            type: 'idea',
+            label: `発想(${ideaCount})`,
+            fixed: false,
+            mode: 'new',
+            historyIndex: ideaHistory.length
+          };
+          
+          ideaHistory.push({ text: 'サンプルデータ' });
+          
+          const idea1Index = deck.findIndex(c => c.type === 'idea' && c.mode === 'new');
+          if (idea1Index !== -1) {
+            const oldCard = deck[idea1Index];
+            deck[idea1Index] = newIdeaCard;
+            
+            const oldEntry = cardMap.get(oldCard.id);
+            if (oldEntry) {
+              oldEntry.el.style.opacity = '0';
+              setTimeout(() => {
+                oldEntry.el.remove();
+                cardMap.delete(oldCard.id);
+                createCard(newIdeaCard);
+                render();
+              }, 300);
+            }
+          }
+        };
+        
+        nav.appendChild(addBtn);
+        label.appendChild(nav);
+        
+        // フッターの矢印ボタン
+        const prevBtn = document.createElement("button");
+        prevBtn.className = "card-nav-btn";
+        prevBtn.textContent = "←";
+        prevBtn.disabled = true;
+        const nextBtn = document.createElement("button");
+        nextBtn.className = "card-nav-btn";
+        nextBtn.textContent = "→";
+        nextBtn.disabled = true;
+        
+        if (card.mode === 'new' && ideaHistory.length > 0) {
+          prevBtn.disabled = false;
+          nextBtn.disabled = false;
+        } else if (card.mode === 'deep' && deepDiveHistory.length > 0) {
+          prevBtn.disabled = false;
+          nextBtn.disabled = false;
+        }
+        
+        const handlePrev = () => {
+          if (card.mode === 'new' && card.historyIndex > 0) {
+            card.historyIndex--;
+            updateNavButtons(card, prevBtn, nextBtn, footerPrevBtn, footerNextBtn);
+          } else if (card.mode === 'deep' && card.historyIndex > 0) {
+            card.historyIndex--;
+            updateNavButtons(card, prevBtn, nextBtn, footerPrevBtn, footerNextBtn);
+          }
+        };
+        
+        const handleNext = () => {
+          if (card.mode === 'new' && card.historyIndex < ideaHistory.length - 1) {
+            card.historyIndex++;
+            updateNavButtons(card, prevBtn, nextBtn, footerPrevBtn, footerNextBtn);
+          } else if (card.mode === 'deep' && card.historyIndex < deepDiveHistory.length - 1) {
+            card.historyIndex++;
+            updateNavButtons(card, prevBtn, nextBtn, footerPrevBtn, footerNextBtn);
+          }
+        };
+        
+        prevBtn.onclick = handlePrev;
+        nextBtn.onclick = handleNext;
+        
+        nav.appendChild(prevBtn);
+        nav.appendChild(nextBtn);
+        label.appendChild(nav);
+        
+        // フッターにも矢印ボタンを追加
+        const footerNav = document.createElement("div");
+        footerNav.className = "card-footer-nav";
+        const footerPrevBtn = document.createElement("button");
+        footerPrevBtn.className = "card-nav-btn";
+        footerPrevBtn.textContent = "←";
+        footerPrevBtn.disabled = prevBtn.disabled;
+        const footerNextBtn = document.createElement("button");
+        footerNextBtn.className = "card-nav-btn";
+        footerNextBtn.textContent = "→";
+        footerNextBtn.disabled = nextBtn.disabled;
+        
+        footerPrevBtn.onclick = handlePrev;
+        footerNextBtn.onclick = handleNext;
+        
+        footerNav.appendChild(footerPrevBtn);
+        footerNav.appendChild(footerNextBtn);
+        el.appendChild(footerNav);
+        
+        updateNavButtons(card, prevBtn, nextBtn, footerPrevBtn, footerNextBtn);
+      }
+      
+      el.appendChild(label);
+
+      const wrap = document.createElement("div");
+      wrap.className = "iframe-wrap";
+
+      const iframe = document.createElement("iframe");
+      iframe.src = PAGE_URL[card.type];
+      iframe.dataset.cardType = card.type;
+      iframe.dataset.cardId = card.id;
+
+      iframe.addEventListener('load', () => {
+        // UI/UXのみのため、実際のデータ送信は行わない
+        sendToIframe(iframe, 'INIT', { cardType: card.type });
+        sendToIframe(iframe, 'TOGGLE_STATE', { locked: overlayEnabled });
+      });
+
+      wrap.appendChild(iframe);
+      el.appendChild(wrap);
+
+      const overlay = document.createElement("div");
+      overlay.className = "swipe-layer";
+      el.appendChild(overlay);
+
+      let startX = 0;
+      let isSwiping = false;
+
+      // スクロールを許可
+      overlay.addEventListener("wheel", e => {
+        if (iframe.contentWindow) {
+          iframe.contentWindow.postMessage({ type: 'PASS_WHEEL', deltaY: e.deltaY }, location.origin);
+        }
+      }, { passive: true });
+
+      overlay.addEventListener("pointerdown", e => {
+        if (e.button === 0) {
+          overlay.setPointerCapture(e.pointerId);
+          startX = e.clientX;
+          isSwiping = true;
+        }
+      });
+
+      overlay.addEventListener("pointerup", e => {
+        if (isSwiping) {
+          const dx = e.clientX - startX;
+          if (Math.abs(dx) > 40) {
+            const index = deck.findIndex(d => d.id === card.id);
+            handleSwipe(dx, index);
+          }
+          isSwiping = false;
+        }
+      });
+
+      overlay.addEventListener("pointercancel", e => {
+        isSwiping = false;
+      });
+
+      cardArea.appendChild(el);
+      cardMap.set(card.id, { el, overlay, iframe });
+    }
+
+    /* ===== render（表示制御のみ） ===== */
+    function render() {
+      cardMap.forEach(v => {
+        v.el.classList.remove("visible");
+      });
+
+      const visibleIndices = getVisibleIndices();
+      visibleIndices.forEach(i => {
+        if (i >= 0 && i < deck.length) {
+          const card = deck[i];
+          const entry = cardMap.get(card.id);
+          if (entry) {
+            entry.el.classList.add("visible");
+            entry.overlay.style.pointerEvents =
+              overlayEnabled ? "auto" : "none";
+          }
+        }
+      });
+    }
+
+    /* ===== swipe ===== */
+    function handleSwipe(dist, index) {
+      if (!overlayEnabled) return;
+      
+      const card = deck[index];
+      
+      // 発想1で右スワイプの場合、新しい発想を追加（UIのみ）
+      if (dist > 0 && card.type === 'idea' && card.mode === 'new') {
+        ideaCount++;
+        const newIdeaCard = {
+          id: crypto.randomUUID(),
+          type: 'idea',
+          label: `発想(${ideaCount})`,
+          fixed: false,
+          mode: 'new',
+          historyIndex: ideaHistory.length
+        };
+        
+        ideaHistory.push({ text: 'サンプルデータ' });
+        
+        const idea1Index = deck.findIndex(c => c.type === 'idea' && c.mode === 'new');
+        if (idea1Index !== -1) {
+          const oldCard = deck[idea1Index];
+          deck[idea1Index] = newIdeaCard;
+          
+          const oldEntry = cardMap.get(oldCard.id);
+          if (oldEntry) {
+            oldEntry.el.style.opacity = '0';
+            setTimeout(() => {
+              oldEntry.el.remove();
+              cardMap.delete(oldCard.id);
+              createCard(newIdeaCard);
+              render();
+            }, 300);
+          }
+        }
+      }
+    }
+
+    /* ===== 初期化 ===== */
+    deck.forEach(createCard);
+    render();
+
+    /* ===== controls ===== */
+    leftBtn.onclick = () => {
+      if (centerIndex > 0) { centerIndex--; render(); }
+    };
+    rightBtn.onclick = () => {
+      if (centerIndex < deck.length - 1) { centerIndex++; render(); }
+    };
+    
+    // 画面数切り替えボタン
+    document.getElementById('viewCountBtn').onclick = () => {
+      visibleCount = visibleCount === 4 ? 3 : visibleCount === 3 ? 2 : visibleCount === 2 ? 1 : 4;
+      document.getElementById('viewCountBtn').textContent = `${visibleCount}画面`;
+      render();
+    };
+    
+    toggleIframeInteraction.onclick = () => {
+      overlayEnabled = !overlayEnabled;
+      const toggleDescription = document.getElementById('toggleDescription');
+      if (overlayEnabled) {
+        toggleIframeInteraction.classList.remove('toggle-on');
+        toggleDescription.textContent = '（スライドによる発想と、nodeによる深掘り可能）';
+      } else {
+        toggleIframeInteraction.classList.add('toggle-on');
+        toggleDescription.textContent = '（画像のアップロード、AI解析、発想の確認可能）';
+      }
+      render();
+      // UI/UXのみのため、実際のデータ送信は行わない
+      cardMap.forEach(({ iframe }) => {
+        if (iframe && iframe.contentWindow) {
+          sendToIframe(iframe, 'TOGGLE_STATE', { locked: overlayEnabled });
+        }
+      });
+    };
+
+    // 初期状態を設定
+    const toggleDescription = document.getElementById('toggleDescription');
+    if (!overlayEnabled) {
+      toggleIframeInteraction.classList.add('toggle-on');
+      toggleDescription.textContent = '（画像のアップロード、AI解析、発想の確認可能）';
+    } else {
+      toggleDescription.textContent = '（スライドによる発想と、nodeによる深掘り可能）';
+    }
+  </script>
+</body>
+
+</html>
+

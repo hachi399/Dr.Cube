@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>画像から文章 - UI/UX Only</title>
+  <style>
+    body { 
+      margin: 0; 
+      padding: 20px; 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif; 
+      background: #000000; 
+      color: #ffffff; 
+    }
+    h2 {
+      font-size: 1.2em;
+      font-weight: 500;
+      margin-bottom: 1em;
+      color: #ffffff;
+    }
+    .file-input-wrapper {
+      position: relative;
+      display: inline-block;
+      margin-bottom: 15px;
+    }
+    input[type="file"] {
+      position: absolute;
+      opacity: 0;
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
+    }
+    .file-input-label {
+      display: inline-block;
+      padding: 10px 20px;
+      background: #1a1a1a;
+      color: #ffffff;
+      border: 2px solid #0066cc;
+      border-radius: 6px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.85em;
+    }
+    .file-input-label:hover {
+      background: rgba(0, 102, 204, 0.1);
+      border-color: #0052a3;
+      transform: scale(1.02);
+    }
+    button { 
+      padding: 10px 24px; 
+      margin-top: 10px; 
+      border: 1px solid #0066cc;
+      border-radius: 6px; 
+      background: #0066cc;
+      color: #ffffff;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    button:hover {
+      background: #0052a3;
+      border-color: #0052a3;
+      transform: translateY(-1px);
+    }
+    button:active {
+      transform: translateY(0);
+    }
+    button:disabled { 
+      opacity: 0.5; 
+      cursor: not-allowed; 
+    }
+    #preview { 
+      margin-top: 20px; 
+      max-width: 300px; 
+      border-radius: 8px; 
+      border: 1px solid #333333;
+      animation: fadeIn 0.5s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.95); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    #output {
+      margin-top: 15px;
+      padding: 12px;
+      background: #1a1a1a;
+      border: 1px solid #333333;
+      border-left: 3px solid #0066cc;
+      border-radius: 6px;
+      color: #ffffff;
+      display: none;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      word-break: break-word;
+      line-height: 1.6;
+      animation: slideIn 0.4s ease;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    #output:not(:empty) {
+      display: block;
+    }
+    /* ローディング表示 */
+    .loading {
+      display: none;
+      margin-top: 10px;
+      padding: 10px;
+      text-align: center;
+      color: #0066cc;
+    }
+    .loading.active {
+      display: block;
+      animation: fadeIn 0.3s ease;
+    }
+    .loading-dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #0066cc;
+      margin: 0 3px;
+      animation: bounce 1.4s infinite ease-in-out;
+    }
+    .loading-dot:nth-child(1) { animation-delay: -0.32s; }
+    .loading-dot:nth-child(2) { animation-delay: -0.16s; }
+    @keyframes bounce {
+      0%, 80%, 100% { transform: scale(0); opacity: 0.5; }
+      40% { transform: scale(1); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <h2>画像から文章</h2>
+
+  <div style="display: flex; flex-direction: column; gap: 10px; align-items: flex-start;">
+    <div class="file-input-wrapper">
+      <input type="file" id="fileInput" accept="image/*" />
+      <label for="fileInput" class="file-input-label">画像を選択</label>
+    </div>
+    <button id="sendBtn">解析</button>
+  </div>
+
+  <div class="loading" id="loading">
+    <span class="loading-dot"></span>
+    <span class="loading-dot"></span>
+    <span class="loading-dot"></span>
+    <span style="margin-left: 8px;">解析中...</span>
+  </div>
+
+  <img id="preview" />
+  <div id="output"></div>
+  
+
+<script>
+document.getElementById("fileInput").addEventListener("change", handleFile);
+document.getElementById("sendBtn").addEventListener("click", processImage);
+
+function handleFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const label = document.querySelector('.file-input-label');
+  if (label) {
+    let fileName = file.name;
+    if (fileName.length > 20) {
+      const ext = fileName.substring(fileName.lastIndexOf('.'));
+      const name = fileName.substring(0, fileName.lastIndexOf('.'));
+      fileName = name.substring(0, 15) + '...' + ext;
+    }
+    label.textContent = fileName;
+    label.title = file.name;
+  }
+
+  const reader = new FileReader();
+  reader.onload = ev => {
+    document.getElementById("preview").src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function processImage() {
+  const img = document.getElementById("preview").src;
+  if (!img) return;
+
+  const sendBtn = document.getElementById("sendBtn");
+  const loading = document.getElementById("loading");
+  const output = document.getElementById("output");
+  
+  // ローディング表示開始
+  sendBtn.disabled = true;
+  sendBtn.textContent = "解析中...";
+  loading.classList.add("active");
+  output.innerHTML = "";
+  output.style.display = 'none';
+
+  // UI/UXのみのため、モック応答を表示
+  setTimeout(() => {
+    const mockResults = [
+      "サンプルテキスト, デモデータ, UI表示",
+      "画像解析結果: テキスト1, テキスト2, テキスト3",
+      "読み取り結果: サンプル, データ, 表示"
+    ];
+    const mockResult = mockResults[Math.floor(Math.random() * mockResults.length)];
+    
+    let word = mockResult;
+    word = word.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    word = word.replace(/\\n/g, '<br>');
+
+    output.innerHTML = "結果: " + word;
+    output.style.display = 'block';
+
+    // ローディング表示終了
+    sendBtn.disabled = false;
+    sendBtn.textContent = "解析";
+    loading.classList.remove("active");
+  }, 2000);
+}
+</script>
+
+
+</body>
+</html>
+

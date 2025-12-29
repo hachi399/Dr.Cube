@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>3段階連想ブレインストーム（UI/UX Only）</title>
+  <style>
+    body{margin:0;font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;background:#ffffff}
+    #graph{width:100vw;height:100vh;background:#ffffff}
+    .controls{position:fixed;top:10px;left:10px;display:flex;gap:8px;align-items:center;background:#ffffff;padding:12px;border-radius:8px;border:1px solid #e0e0e0;box-shadow:0 2px 8px rgba(0,0,0,0.08);z-index:1000;pointer-events:auto;transition: all 0.3s ease;}
+    .controls:hover{box-shadow:0 4px 12px rgba(0,0,0,0.12);}
+    .controls button{pointer-events:auto}
+    button{padding:10px 20px;font-size:14px;border-radius:6px;border:1px solid #0066cc;background:#0066cc;color:#ffffff;cursor:pointer;font-weight:500;transition:all 0.2s}
+    button:hover{background:#0052a3;border-color:#0052a3;transform: translateY(-1px);}
+    button:active{transform: translateY(0);}
+    button[disabled]{opacity:0.5;cursor:default;background:#cccccc;border-color:#cccccc}
+    .zoom-btn{width:32px;height:32px;padding:0;border-radius:50%;border:1px solid #cccccc;background:#f5f5f5;color:#666666;font-size:18px;font-weight:bold;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all 0.2s}
+    .zoom-btn:hover{background:#e0e0e0;border-color:#999999;transform: scale(1.1);}
+    .reset-btn{min-width:60px;height:32px;padding:0 12px;border-radius:16px;border:1px solid #cccccc;background:#f5f5f5;color:#666666;font-size:12px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all 0.2s;white-space:nowrap}
+    .reset-btn:hover{background:#e0e0e0;border-color:#999999;transform: scale(1.05);}
+    .tooltip{position:fixed;pointer-events:none;padding:10px 14px;background:#ffffff;color:#000000;border-radius:8px;font-size:13px;z-index:10000;display:none;max-width:280px;line-height:1.6;word-wrap:break-word;overflow-wrap:break-word;word-break:break-word;box-shadow:0 4px 12px rgba(0,0,0,0.2);backdrop-filter:blur(10px);white-space:normal;animation: fadeIn 0.2s ease;}
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-5px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .tooltip.link-tooltip{border:2px solid #000000}
+    .tooltip.node-tooltip{border:2px solid #0066cc}
+    #graph{cursor:grab}
+    #graph:active{cursor:grabbing}
+    .node-detail{position:fixed;top:0;left:0;right:0;background:rgba(0,0,0,0.95);color:#ffffff;padding:40px;z-index:10000;display:none;max-height:80vh;overflow-y:auto;font-size:18px;line-height:1.8;animation: slideDown 0.3s ease;}
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .node-detail.active{display:block}
+    .node-detail-content{max-width:1200px;margin:0 auto}
+    .node-detail-title{font-size:24px;font-weight:bold;margin-bottom:20px;color:#0066cc}
+    .node-detail-text{white-space:pre-wrap;word-wrap:break-word}
+  </style>
+</head>
+<body>
+
+  <div class="controls">
+    <button id="addSeedBtn">連想マップ</button>
+    <button id="zoomInBtn" class="zoom-btn">+</button>
+    <button id="zoomOutBtn" class="zoom-btn">−</button>
+    <button id="resetZoomBtn" class="reset-btn">生成を停止</button>
+  </div>
+
+  <input id="seedInput" type="hidden" value="サンプル">
+
+  <svg id="graph"></svg>
+  <div id="tooltip" class="tooltip"></div>
+  <div id="nodeDetail" class="node-detail">
+    <div class="node-detail-content">
+      <div class="node-detail-title" id="nodeDetailTitle"></div>
+      <div class="node-detail-text" id="nodeDetailText"></div>
+    </div>
+  </div>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+
+  /* ---------------------------------------------------
+      ✅ 親ページからのメッセージを受信（UI/UXのみ）
+  --------------------------------------------------- */
+  let isLocked = true;
+  
+  // ノード詳細表示関数
+  function showNodeDetail(node) {
+    const detailEl = document.getElementById('nodeDetail');
+    const titleEl = document.getElementById('nodeDetailTitle');
+    const textEl = document.getElementById('nodeDetailText');
+    
+    titleEl.textContent = node.name || node.originalText || '';
+    textEl.textContent = node.originalText || node.name || '';
+    
+    detailEl.classList.add('active');
+    
+    const closeHandler = (e) => {
+      if (e.target === detailEl || e.target.closest('.node-detail-content')) {
+        detailEl.classList.remove('active');
+        detailEl.removeEventListener('click', closeHandler);
+      }
+    };
+    detailEl.addEventListener('click', closeHandler);
+  }
+
+  window.addEventListener('message', e=>{
+    if(e.origin !== location.origin) return;
+    const { type, payload } = e.data || {};
+
+    if(type === 'TOGGLE_STATE'){
+      isLocked = payload?.locked ?? true;
+      const zoomInBtn = document.getElementById('zoomInBtn');
+      const zoomOutBtn = document.getElementById('zoomOutBtn');
+      if (isLocked) {
+        zoomInBtn.disabled = true;
+        zoomOutBtn.disabled = true;
+      } else {
+        zoomInBtn.disabled = false;
+        zoomOutBtn.disabled = false;
+      }
+      return;
+    }
+
+    // UI/UXのみのため、モックデータでノードを生成
+    if(type === 'DB_UPDATE'){
+      if(!isLocked) return;
+      
+      const seedText = payload?.text || payload?.result || payload?.message || "サンプルデータ";
+      const seedInput = document.getElementById('seedInput');
+      seedInput.value = seedText;
+      seedInput.dataset.isDeepDive = 'false';
+
+      const newParent = addNode(seedText, null, 0);
+      restart();
+      
+      // モックデータでノードを生成
+      setTimeout(() => {
+        const mockChildWords = ["関連語1", "関連語2", "関連語3", "関連語4", "関連語5", "関連語6"];
+        
+        mockChildWords.forEach((c, i) => {
+          setTimeout(() => {
+            const child = addNode(c, newParent.id, 1);
+            restart();
+            
+            setTimeout(() => {
+              const mockGrandWords = [`${c}の子1`, `${c}の子2`, `${c}の子3`];
+              mockGrandWords.forEach(g => {
+                addNode(g, child.id, 2);
+              });
+              restart();
+            }, 100);
+          }, i * 150);
+        });
+      }, 200);
+    }
+    
+    if(type === 'DEEP_DIVE'){
+      nodes = [];
+      links = [];
+      idCounter = 0;
+      restart();
+      
+      const seedText = payload?.text || payload?.result || payload?.message || "深掘りサンプル";
+      document.getElementById('seedInput').value = seedText;
+      document.getElementById('seedInput').dataset.isDeepDive = 'true';
+
+      document.getElementById('addSeedBtn').click();
+    }
+  });
+
+  /* ---------------------------------------------------
+      UI/UXのみのノード生成ロジック
+  --------------------------------------------------- */
+
+  let nodes = [];
+  let links = [];
+  let idCounter = 0;
+
+  const svg = d3.select('#graph');
+  const tooltip = d3.select('#tooltip');
+  const getW = () => window.innerWidth;
+  const getH = () => window.innerHeight;
+  svg.attr('width', getW()).attr('height', getH());
+
+  const g = svg.append('g');
+  const linkG = g.append('g').attr('class','links');
+  const nodeG = g.append('g').attr('class','nodes');
+
+  let currentTransform = d3.zoomIdentity;
+  
+  const zoom = d3.zoom()
+    .scaleExtent([0.1, 4])
+    .on('zoom', (event) => {
+      g.attr('transform', event.transform);
+      currentTransform = event.transform;
+    })
+    .filter(function(event) {
+      return event.target === svg.node() || event.target.tagName === 'svg' || 
+             (event.type === 'wheel') || 
+             (event.type === 'mousedown' && event.button === 0 && !event.target.closest('.node') && !event.target.closest('.link'));
+    });
+
+  svg.call(zoom);
+  
+  document.getElementById('zoomInBtn').addEventListener('click', () => {
+    if (isLocked) return;
+    const newScale = Math.min(currentTransform.k * 1.2, 4);
+    const newTransform = d3.zoomIdentity.scale(newScale).translate(currentTransform.x, currentTransform.y);
+    svg.transition().duration(200).call(zoom.transform, newTransform);
+  });
+  
+  document.getElementById('zoomOutBtn').addEventListener('click', () => {
+    if (isLocked) return;
+    const newScale = Math.max(currentTransform.k / 1.2, 0.1);
+    const newTransform = d3.zoomIdentity.scale(newScale).translate(currentTransform.x, currentTransform.y);
+    svg.transition().duration(200).call(zoom.transform, newTransform);
+  });
+
+  document.getElementById('zoomInBtn').disabled = true;
+  document.getElementById('zoomOutBtn').disabled = true;
+  
+  function resetGeneration() {
+    nodes = [];
+    links = [];
+    idCounter = 0;
+    document.getElementById('seedInput').value = '';
+    restart();
+    const resetTransform = d3.zoomIdentity;
+    svg.transition().duration(300).call(zoom.transform, resetTransform);
+  }
+
+  let generationStopRequested = false;
+  
+  function stopGeneration() {
+    generationStopRequested = true;
+    isGenerating = false;
+    const btn = document.getElementById('addSeedBtn');
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '連想マップ';
+    }
+  }
+
+  document.getElementById('resetZoomBtn').addEventListener('click', () => {
+    stopGeneration();
+  });
+
+  const LINK_PARENT_CHILD = 45;
+  const LINK_CHILD_GRAND = 60;
+
+  const simulation = d3.forceSimulation()
+    .force('link', d3.forceLink().id(d=>d.id).distance(link => {
+      const sDepth = (link && link.source && typeof link.source.depth === 'number') ? link.source.depth : 0;
+      const tDepth = (link && link.target && typeof link.target.depth === 'number') ? link.target.depth : 1;
+      return (sDepth === 0 && tDepth === 1) ? LINK_PARENT_CHILD : LINK_CHILD_GRAND;
+    }))
+    .force('charge', d3.forceManyBody().strength(-80))
+    .force('center', d3.forceCenter(getW()/2, getH()/2))
+    .force('collision', d3.forceCollide(d => (d.radius || 22) + 2))
+    .on('tick', ticked);
+
+  function makeId(){ return 'n' + (++idCounter); }
+  function findNodeById(id){ return nodes.find(n=>n.id===id); }
+
+  // UI/UXのみのため、モックデータを生成
+  function generateMockWords(word, count = 6) {
+    const mockWords = [];
+    for (let i = 1; i <= count; i++) {
+      mockWords.push(`${word}関連${i}`);
+    }
+    return mockWords;
+  }
+
+  function generateMockReason(a, b) {
+    return `${a}と${b}は関連性があります。`;
+  }
+
+  function addNode(name, parentId=null, depth=0){
+    const textLength = name.length;
+    const radius = Math.min(Math.max(18, textLength * 2.5), 30);
+    
+    const n = { id: makeId(), name, depth, radius };
+    let px = getW()/2, py = getH()/2;
+    if(parentId){
+      const p = findNodeById(parentId);
+      if(p && typeof p.x === 'number'){ px = p.x; py = p.y; }
+    }
+    const ang = Math.random()*Math.PI*2;
+    const baseDist = parentId ? 40 : 20;
+    n.x = px + Math.cos(ang)*baseDist;
+    n.y = py + Math.sin(ang)*baseDist;
+
+    nodes.push(n);
+
+    if(parentId){
+      const pNode = findNodeById(parentId);
+      const linkObj = { id: 'l' + links.length, source: pNode, target: n, reason: generateMockReason(pNode.name, n.name) };
+      links.push(linkObj);
+    }
+
+    return n;
+  }
+
+  function restart(){
+    const linkSel = linkG.selectAll('g.link').data(links, d=>d.id);
+    linkSel.exit().remove();
+    const linkEnter = linkSel.enter().append('g').attr('class','link');
+    
+    linkEnter
+      .on('mouseover', (e, d) => {
+        let reasonText = d.reason || '';
+        reasonText = reasonText.replace(/\\n/g, '');
+        reasonText = reasonText.replace(/\n/g, ' ');
+        reasonText = reasonText.replace(/\*\*/g, '');
+        tooltip.classed('link-tooltip', true).classed('node-tooltip', false);
+        tooltip.style('display', 'block')
+          .text(reasonText);
+      })
+      .on('mousemove', (e) => {
+        tooltip.style('left', (e.pageX + 10) + 'px')
+          .style('top', (e.pageY + 10) + 'px');
+      })
+      .on('mouseout', () => {
+        tooltip.style('display', 'none');
+      });
+
+    linkEnter.append('line').attr('class','hit').attr('stroke','transparent').attr('stroke-width',20);
+    linkEnter.append('line').attr('class','visible').attr('stroke','#000000').attr('stroke-width',1.5).attr('opacity',0.4);
+    
+    const nodeSel = nodeG.selectAll('g.node').data(nodes, d=>d.id);
+    nodeSel.exit().remove();
+
+    const nodeEnter = nodeSel.enter().append('g')
+      .attr('class','node')
+      .on('click', (e, d) => {
+        e.stopPropagation();
+        
+        if (isLocked) {
+          // ロック中は何もしない（UIのみ）
+        } else {
+          showNodeDetail(d);
+        }
+      });
+
+    nodeSel.on('mouseover', function(e, d) {
+      const originalText = d.originalText || d.name;
+      const displayedText = d3.select(this).select('text').text();
+      
+      if (originalText !== displayedText || displayedText.includes('...')) {
+        let displayText = originalText.replace(/\\n/g, '').replace(/\n/g, ' ');
+        tooltip.classed('link-tooltip', false).classed('node-tooltip', true);
+        tooltip.style('display', 'block')
+          .text(displayText);
+      }
+    })
+    .on('mousemove', function(e) {
+      tooltip.style('left', (e.pageX + 15) + 'px')
+        .style('top', (e.pageY - 10) + 'px');
+    })
+    .on('mouseout', function() {
+      tooltip.style('display', 'none');
+    });
+
+    function fitTextToCircle(text, circleRadius) {
+      text.each(function() {
+        const textEl = d3.select(this);
+        const originalText = textEl.text();
+        const maxWidth = circleRadius * 1.6;
+        let fontSize = 11;
+        let currentText = originalText;
+        
+        if (originalText.length > 8) {
+          currentText = originalText.substring(0, 6) + '...';
+        }
+        
+        textEl.text(currentText);
+        
+        while (textEl.node().getComputedTextLength() > maxWidth && fontSize > 8) {
+          fontSize -= 0.5;
+          textEl.style('font-size', fontSize + 'px');
+        }
+        
+        if (textEl.node().getComputedTextLength() > maxWidth) {
+          let shortText = currentText;
+          while (textEl.text(shortText).node().getComputedTextLength() > maxWidth && shortText.length > 0) {
+            shortText = shortText.substring(0, shortText.length - 1);
+          }
+          if (shortText.length < currentText.length) {
+            textEl.text(shortText + '...');
+          }
+        }
+      });
+    }
+
+    nodeEnter.each(function(d) {
+      const nodeGroup = d3.select(this);
+      const radius = d.radius || 18;
+      
+      const circle = nodeGroup.append('circle')
+        .attr('r', radius)
+        .attr('fill','#ffffff')
+        .attr('stroke','#0066cc')
+        .attr('stroke-width',2)
+        .style('cursor', 'pointer');
+      
+      const nodeText = nodeGroup.append('text')
+        .attr('dy', 4)
+        .attr('text-anchor', 'middle')
+        .style('font-size', '11px')
+        .style('fill', '#000000')
+        .style('font-weight', '500')
+        .style('pointer-events', 'none')
+        .text(d.name);
+      
+      nodeText.call(fitTextToCircle, radius);
+      d.originalText = d.name;
+    });
+
+    nodeSel.select('circle').attr('r', d => d.radius || 18);
+    nodeSel.select('text').each(function(d) {
+      const textEl = d3.select(this);
+      const radius = d.radius || 18;
+      textEl.text(d.name);
+      textEl.call(fitTextToCircle, radius);
+      if (!d.originalText) {
+        d.originalText = d.name;
+      }
+    });
+
+    nodeSel.on('click', function(e, d) {
+      e.stopPropagation();
+      
+      if (isLocked) {
+        // ロック中は何もしない
+      } else {
+        showNodeDetail(d);
+      }
+    });
+
+    simulation.nodes(nodes);
+    simulation.force('link').links(links);
+    simulation.alpha(0.9).restart();
+  }
+
+  function ticked(){
+    nodeG.selectAll('g.node').attr('transform', d=>`translate(${d.x},${d.y})`);
+    
+    linkG.selectAll('g.link').each(function(d){
+      d3.select(this).select('line.hit')
+        .attr('x1',d.source.x).attr('y1',d.source.y)
+        .attr('x2',d.target.x).attr('y2',d.target.y);
+      d3.select(this).select('line.visible')
+        .attr('x1',d.source.x).attr('y1',d.source.y)
+        .attr('x2',d.target.x).attr('y2',d.target.y);
+    });
+  }
+
+  document.getElementById('addSeedBtn').addEventListener('click', async ()=>{
+    const seed = document.getElementById('seedInput').value.trim();
+    if(!seed){ return; }
+
+    generationStopRequested = false;
+    isGenerating = true;
+    const btn = document.getElementById('addSeedBtn');
+    btn.disabled = true;
+    btn.textContent = '生成中...';
+
+    try{
+      const isDeepDive = document.getElementById('seedInput').dataset.isDeepDive === 'true';
+      if (isDeepDive) {
+        nodes = []; links = []; idCounter = 0; restart();
+      }
+
+      const parent = addNode(seed, null, 0);
+      restart();
+
+      // モックデータでノードを生成
+      const childWords = generateMockWords(seed, 6);
+
+      for(let i = 0; i < 6; i++){
+        if (generationStopRequested) break;
+        
+        const c = childWords[i];
+        const child = addNode(c, parent.id, 1);
+        restart();
+        await new Promise(r=>setTimeout(r, 80));
+
+        if (generationStopRequested) break;
+
+        const grandWords = generateMockWords(c, 3);
+        
+        for(const g of grandWords){
+          if (generationStopRequested) break;
+          addNode(g, child.id, 2);
+        }
+        restart();
+      }
+    }finally{
+      isGenerating = false;
+      btn.disabled = false;
+      btn.textContent = '連想マップ';
+    }
+  });
+
+  window.addEventListener('resize', ()=>{
+    svg.attr('width', getW()).attr('height', getH());
+    simulation.force('center', d3.forceCenter(getW()/2, getH()/2));
+    simulation.alpha(0.3).restart();
+  });
+
+  </script>
+</body>
+</html>
+
