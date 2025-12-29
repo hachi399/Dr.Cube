@@ -33,15 +33,7 @@
 </div>
 
 <div class="container">
-  <div class="panel">
-    <h3>Front Camera (MediaPipe Analysis)</h3>
-    <div style="position: relative;">
-      <video id="video-front" style="display:none;" autoplay playsinline></video>
-      <canvas id="canvas-front"></canvas>
-    </div>
-    <div class="status" id="status-front">Loading OpenCV...</div>
-  </div>
-
+  <!-- Fish -->
   <div class="panel">
     <h3>Fish Camera (Calibration / Projection)</h3>
     <div style="position: relative;">
@@ -84,6 +76,16 @@
     </div>
 
     <div class="status" id="status-fish">Ready.</div>
+  </div>
+
+  <!-- Front -->
+  <div class="panel">
+    <h3>Front Camera (MediaPipe Analysis)</h3>
+    <div style="position: relative;">
+      <video id="video-front" style="display:none;" autoplay playsinline></video>
+      <canvas id="canvas-front"></canvas>
+    </div>
+    <div class="status" id="status-front">Loading OpenCV...</div>
   </div>
 </div>
 
@@ -205,12 +207,20 @@ class StorageDB {
         tx.objectStore("snapshots").clear();
         tx.objectStore("settings").clear();
     }
-
     async saveSetting(key, value) {
         const tx = this.db.transaction(["settings"], "readwrite");
         tx.objectStore("settings").put({ key, value });
     }
 
+    async clearCalibrationOnly() {
+        const tx = this.db.transaction(
+            ["calibration", "model", "snapshots"],
+            "readwrite"
+        );
+        tx.objectStore("calibration").clear();
+        tx.objectStore("model").clear();
+        tx.objectStore("snapshots").clear();
+    }
     async loadSetting(key) {
         return new Promise(resolve => {
             const tx = this.db.transaction(["settings"], "readonly");
@@ -440,11 +450,6 @@ let displayBuffer = []; // 15フレーム平均表示用の専用バッファ
 let calibrationMode = true;
 let calibIndex = 0;
 let isSampling = false;
-let imgElement = new Image();
-let appStarted = false;
-let faceMeshInitialized = false;
-let selFront;
-let selFish;
 
 // フィルタ
 const pitchFilter = new OneEuroFilter();
@@ -457,12 +462,7 @@ function onOpenCvReady() {
     document.getElementById('btn-start').disabled = false;
 }
 
-
 async function startApp() {
-
-    if (appStarted) return;   // ★ 連打・再実行防止
-    appStarted = true;
-    
     videoFront = document.getElementById('video-front');
     videoFish = document.getElementById('video-fish');
     canvasFront = document.getElementById('canvas-front');
@@ -497,55 +497,17 @@ async function startApp() {
     await startCamera(videoFront, frontId, 640, 480);
     await startCamera(videoFish, fishId, 1920, 1080); // 要求解像度
 
-    // 一時 Canvas に Video を描画して Mat 化
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = videoFish.videoWidth;
-    tempCanvas.height = videoFish.videoHeight;
-    const tempCtx = tempCanvas.getContext('2d');
-    tempCtx.drawImage(videoFish, 0, 0, tempCanvas.width, tempCanvas.height);
-
-    let src = cv.imread(tempCanvas);
-    let dst = new cv.Mat();
-    const w = src.cols;
-    const h = src.rows;
-
-    // 歪み補正用パラメータ
-    let K = cv.matFromArray(3, 3, cv.CV_64F, [
-        CONFIG.f, 0, w / 2,
-        0, CONFIG.f * 0.62, h / 2,
-        0, 0, 1
-    ]);
-    let D = cv.matFromArray(1, 4, cv.CV_64F, [CONFIG.k1, CONFIG.k2, 0, 0]);
-    let map1 = new cv.Mat();
-    let map2 = new cv.Mat();
-    let new_K = K.clone();
-
-    cv.initUndistortRectifyMap(K, D, cv.Mat.eye(3, 3, cv.CV_64F), new_K, new cv.Size(w, h), cv.CV_32FC1, map1, map2);
-    cv.remap(src, dst, map1, map2, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(0,0,0,255));
-
-    // クロップ
-    let ch = Math.floor(h * CONFIG.crop);
-    let cw = Math.floor(w * CONFIG.crop);
-    let y0 = Math.floor((h - ch) / 2);
-    let x0 = Math.floor((w - cw) / 2);
-    let rect = new cv.Rect(x0, y0, cw, ch);
-    let cropped = dst.roi(rect);
-
-    // リサイズ
-    let finalOutput = new cv.Mat();
-    cv.resize(cropped, finalOutput, new cv.Size(canvasFish.width, canvasFish.height), 0, 0, cv.INTER_LINEAR);
-
-    // ctxFish に描画
-    let imgData = new ImageData(new Uint8ClampedArray(finalOutput.data), finalOutput.cols, finalOutput.rows);
-    ctxFish.putImageData(imgData, 0, 0);
-
     // MediaPipe設定
-    await initFaceMeshOnce();
-
-
-    // メモリ解放
-    src.delete(); dst.delete(); cropped.delete(); finalOutput.delete();
-    map1.delete(); map2.delete(); K.delete(); D.delete(); new_K.delete();
+    faceMesh = new FaceMesh({locateFile: (file) => {
+        return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+    }});
+    faceMesh.setOptions({
+        maxNumFaces: 1,
+        refineLandmarks: true,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+    });
+    faceMesh.onResults(onFaceResults);
 
     // ループ開始
     requestAnimationFrame(loop);
@@ -600,24 +562,121 @@ async function ensureCameraPermission() {
     stream.getTracks().forEach(t => t.stop());
 }
 
-async function initFaceMeshOnce() {
-    if (faceMeshInitialized) return;
+// ==========================================
+// 歪み補正のみを行う関数
+// ==========================================
+async function undistortFishFrame(videoFish) {
+    // 一時 Canvas に Video を描画して Mat 化
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = videoFish.videoWidth;
+    tempCanvas.height = videoFish.videoHeight;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.drawImage(videoFish, 0, 0, tempCanvas.width, tempCanvas.height);
 
-    faceMesh = new FaceMesh({
-        locateFile: file =>
-            `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-    });
+    let src = cv.imread(tempCanvas);
+    let dst = new cv.Mat();
+    const w = src.cols;
+    const h = src.rows;
 
-    faceMesh.setOptions({
-        maxNumFaces: 1,
-        refineLandmarks: true,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5
-    });
+    // 歪み補正用パラメータ
+    let K = cv.matFromArray(3, 3, cv.CV_64F, [
+        CONFIG.f, 0, w / 2,
+        0, CONFIG.f * 0.62, h / 2,
+        0, 0, 1
+    ]);
+    let D = cv.matFromArray(1, 4, cv.CV_64F, [CONFIG.k1, CONFIG.k2, 0, 0]);
+    let map1 = new cv.Mat();
+    let map2 = new cv.Mat();
+    let new_K = K.clone();
 
-    faceMesh.onResults(onFaceResults);
-    faceMeshInitialized = true;
+    cv.initUndistortRectifyMap(K, D, cv.Mat.eye(3, 3, cv.CV_64F), new_K, new cv.Size(w, h), cv.CV_32FC1, map1, map2);
+    cv.remap(src, dst, map1, map2, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(0,0,0,255));
+
+    // クロップ
+    let ch = Math.floor(h * CONFIG.crop);
+    let cw = Math.floor(w * CONFIG.crop);
+    let y0 = Math.floor((h - ch) / 2);
+    let x0 = Math.floor((w - cw) / 2);
+    let rect = new cv.Rect(x0, y0, cw, ch);
+    let cropped = dst.roi(rect);
+
+    // リサイズ（必要ならキャンバスサイズに合わせる）
+    let finalOutput = new cv.Mat();
+    cv.resize(cropped, finalOutput, new cv.Size(videoFish.videoWidth, videoFish.videoHeight), 0, 0, cv.INTER_LINEAR);
+
+    // メモリ解放（Matのコピーは返すので finalOutput は呼び出し側で delete する）
+    src.delete(); dst.delete(); cropped.delete();
+    map1.delete(); map2.delete(); K.delete(); D.delete(); new_K.delete();
+
+    return finalOutput; // cv.Mat
 }
+
+// ==========================================
+// cv.Mat を canvas に描画する関数
+// ==========================================
+function drawMatOnCanvas(canvas, mat) {
+    const ctx = canvas.getContext('2d');
+    const imgData = new ImageData(new Uint8ClampedArray(mat.data), mat.cols, mat.rows);
+    ctx.putImageData(imgData, 0, 0);
+}
+
+// ==========================================
+// 注視点だけを描画する
+// ==========================================
+function drawGazePointsOnly(canvasFish, gazePoints) {
+    const ctx = canvasFish.getContext('2d');
+    for (let pt of gazePoints) {
+        ctx.fillStyle = "red";
+        ctx.beginPath();
+        ctx.arc(pt[0], pt[1], 8, 0, 2 * Math.PI);
+        ctx.fill();
+    }
+}
+
+
+// ==========================================
+// ズーム・パン対応の描画関数
+// ==========================================
+function drawUndistortedWithZoom(canvas, matFrame, gazePoints=[], zoomLevel=2.0, offset=[0,0]) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,canvas.width, canvas.height);
+
+    const srcW = matFrame.cols;
+    const srcH = matFrame.rows;
+
+    // 表示する矩形サイズ（ズームで小さくなるほど拡大）
+    const viewW = srcW / zoomLevel;
+    const viewH = srcH / zoomLevel;
+
+    // 注視点中心にズーム
+    let centerX = gazePoints.length > 0 ? gazePoints[0][0] : srcW / 2;
+    let centerY = gazePoints.length > 0 ? gazePoints[0][1] : srcH / 2;
+
+    // 手動オフセットを加える
+    centerX += offset[0];
+    centerY += offset[1];
+
+    // 描画元の矩形（切り出し元）
+    let sx = Math.max(0, Math.min(srcW - viewW, centerX - viewW/2));
+    let sy = Math.max(0, Math.min(srcH - viewH, centerY - viewH/2));
+
+    // Mat → ImageData
+    const imgData = new ImageData(new Uint8ClampedArray(matFrame.data), matFrame.cols, matFrame.rows);
+
+    // 一時 Canvas に描画して切り抜き
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = srcW;
+    tempCanvas.height = srcH;
+    tempCanvas.getContext('2d').putImageData(imgData, 0, 0);
+
+    ctx.drawImage(
+        tempCanvas,
+        sx, sy, viewW, viewH,       // 元画像の切り出し矩形
+        0, 0, canvas.width, canvas.height  // 表示先キャンバス全体
+    );
+
+}
+
 
 
 // ----------------------------------------------------------------
@@ -762,7 +821,10 @@ async function loop() {
             canvasFish.height = videoFish.videoHeight;
         }
         // 魚眼映像描画
-        ctxFish.drawImage(videoFish, 0, 0, canvasFish.width, canvasFish.height);
+        const matFrame = await undistortFishFrame(videoFish); // 歪み補正だけ
+        drawMatOnCanvas(canvasFish, matFrame); // 歪み補正のみ
+        
+        //ctxFish.drawImage(videoFish, 0, 0, canvasFish.width, canvasFish.height);
 
         // キャリブレーションモードUI
         if(calibrationMode) {
@@ -806,12 +868,13 @@ async function loop() {
                 const u = Math.max(0, Math.min(uv[0], canvasFish.width));
                 const v = Math.max(0, Math.min(uv[1], canvasFish.height));
                 
-                ctxFish.fillStyle = "#00ff00";
-                ctxFish.beginPath(); ctxFish.arc(u, v, 12, 0, 2*Math.PI); ctxFish.fill();
-                ctxFish.fillText("Gaze", u+15, v);
+                // 注視点だけ追加
+                drawGazePointsOnly(canvasFish, [[u, v]]);
+
                 
             }
         }
+        matFrame.delete(); // 使い終わったらメモリ解放
         
     }
     
@@ -985,6 +1048,7 @@ function updateEditCanvas() {
 
     // 元画像から切り出してキャンバスいっぱいに描画
     ctxEdit.drawImage(editImageData, sx, sy, viewW, viewH, 0, 0, w, h);
+    
 }
 
 // JSONファイル として保存
@@ -1058,11 +1122,27 @@ window.onload = async () => {
             // --- 編集初期値 ---
             editGazeUV = uv;
             offsetUV = [0, 0];
-            zoomLevel = 2.0;
+            zoomLevel = 3.0;
             
             // --- 画像取得 ---
-            //const dataUrl = canvasFish.toDataURL("image/jpeg");
-            const rawImageDataUrl = captureRawFishImage(videoFish);
+            const matFrame = await undistortFishFrame(videoFish);
+
+            const imgData = new ImageData(new Uint8ClampedArray(matFrame.data), matFrame.cols, matFrame.rows);
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = matFrame.cols;
+            tempCanvas.height = matFrame.rows;
+            tempCanvas.getContext('2d').putImageData(imgData, 0, 0);
+
+            editImageData = new Image();
+            editImageData.src = tempCanvas.toDataURL(); // これで歪み補正済み画像がセットされる
+            editImageData.onload = () => {
+                canvasEdit.width = 640; 
+                canvasEdit.height = 360;
+                document.getElementById('edit-panel').style.display = 'block';
+                document.getElementById('edit-gaze-pos').innerText = `(${uv[0]}, ${uv[1]})`;
+                updateEditCanvas();
+                matFrame.delete(); // メモリ解放
+            };
 
 
             // ======== ログ出力 ========
@@ -1073,21 +1153,11 @@ window.onload = async () => {
             console.log("editGazeUV:", editGazeUV);
             console.log("offsetUV:", offsetUV);
             console.log("zoomLevel:", zoomLevel);
-            console.log("image rawImageDataUrl length:", rawImageDataUrl.length);
+            console.log("image editImageData src length:", editImageData.src.length);
             console.log("canvasFish size:", canvasFish.width, "x", canvasFish.height);
             console.groupEnd();
             // ==========================
-            
-            // --- 編集用画像準備 ---
-            editImageData = new Image();
-            editImageData.src = rawImageDataUrl;
-            editImageData.onload = () => {
-                canvasEdit.width = 640; 
-                canvasEdit.height = 360;
-                document.getElementById('edit-panel').style.display = 'block';
-                document.getElementById('edit-gaze-pos').innerText = `(${uv[0]}, ${uv[1]})`;
-                updateEditCanvas();
-            };
+
         }
     };
     document.getElementById('btn-snap').onclick = triggerSnap;
