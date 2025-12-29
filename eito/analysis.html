@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Auto Capture AI Chat</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #000000;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+      color: #ffffff;
+      overflow-y: auto;
+    }
+    main {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+      padding: 2em 1em;
+    }
+    h1 {
+      font-size: 1.5em;
+      font-weight: 500;
+      margin-bottom: 1.5em;
+      color: #ffffff;
+      letter-spacing: 0.05em;
+    }
+    #chat {
+      width: 90%;
+      max-width: 700px;
+      height: 400px;
+      overflow-y: auto;
+      margin-bottom: 1.5em;
+      padding: 1.5em;
+      background-color: #1a1a1a;
+      border: 1px solid #333333;
+      border-radius: 8px;
+    }
+    #chat::-webkit-scrollbar {
+      width: 8px;
+    }
+    #chat::-webkit-scrollbar-track {
+      background: #0a0a0a;
+      border-radius: 4px;
+    }
+    #chat::-webkit-scrollbar-thumb {
+      background: #0066cc;
+      border-radius: 4px;
+    }
+    #chat::-webkit-scrollbar-thumb:hover {
+      background: #0052a3;
+    }
+    #chat p {
+      margin: 0.8em 0;
+      line-height: 1.6;
+      color: #ffffff;
+    }
+    #chat b {
+      color: #ffffff;
+      font-weight: 500;
+    }
+    .data-badge {
+      display: inline-block;
+      padding: 6px 12px;
+      margin: 4px 0;
+      border-radius: 4px;
+      font-size: 0.85em;
+      font-weight: 500;
+      border: 1px solid #0066cc;
+      background: rgba(0, 102, 204, 0.1);
+      color: #66b3ff;
+    }
+    .ai-badge {
+      display: inline-block;
+      padding: 6px 12px;
+      margin: 4px 0;
+      border-radius: 4px;
+      font-size: 0.85em;
+      font-weight: 500;
+      border: 1px solid #00cc66;
+      background: rgba(0, 204, 102, 0.1);
+      color: #66ff99;
+    }
+    .data-content {
+      margin-top: 12px;
+    }
+    .data-content {
+      margin-top: 12px;
+      padding: 12px;
+      background: #0a0a0a;
+      border: 1px solid #333333;
+      border-left: 3px solid #0066cc;
+      border-radius: 4px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      color: #e0e0e0;
+      font-size: 0.95em;
+      line-height: 1.8;
+    }
+    .ai-content {
+      margin-top: 12px;
+      padding: 12px;
+      background: #0a0a0a;
+      border: 1px solid #333333;
+      border-left: 3px solid #00cc66;
+      border-radius: 4px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      color: #e0e0e0;
+      font-size: 0.95em;
+      line-height: 1.8;
+    }
+    .data-content strong, .ai-content strong {
+      color: #ffffff;
+      font-weight: 700;
+    }
+    .data-item {
+      margin: 8px 0;
+      padding: 4px 0;
+      border-bottom: 1px solid #333333;
+    }
+    .data-item:last-child {
+      border-bottom: none;
+    }
+    .data-label {
+      color: #66b3ff;
+      font-size: 0.85em;
+      margin-right: 8px;
+    }
+    .data-value {
+      color: #ffffff;
+    }
+    #input {
+      width: 70%;
+      padding: 0.8em 1em;
+      border-radius: 6px;
+      border: 1px solid #333333;
+      background: #1a1a1a;
+      color: #ffffff;
+      font-size: 1em;
+      margin-right: 0.5em;
+    }
+    #input:focus {
+      outline: none;
+      border-color: #0066cc;
+      box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.2);
+    }
+    button {
+      padding: 0.8em 1.8em;
+      border: 1px solid #0066cc;
+      border-radius: 6px;
+      background: #0066cc;
+      color: #ffffff;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    button:hover {
+      background: #0052a3;
+      border-color: #0052a3;
+    }
+    .chat-controls {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 2em;
+      gap: 0.5em;
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <h1>Dr.Cube AI解析<br>ぐんまちゃん</h1>
+
+    <div id="chat">
+      <p>お手伝いできることはありますか？</p>
+    </div>
+
+    <div class="chat-controls">
+      <input id="input" placeholder="メッセージを入力..." />
+      <button onclick="sendMessage()">送信</button>
+    </div>
+  </main>
+
+  <script>
+    const API_URL = "https://dr-cube-1.onrender.com/chat";
+
+    // HTMLエスケープ関数
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    /* ----------------------------------------------------
+        ✅ 親ページからのwheelイベントを受信してスクロール
+    ---------------------------------------------------- */
+    window.addEventListener('message', event => {
+      if (event.origin !== location.origin) return;
+      const { type, deltaY } = event.data || {};
+      
+      if (type === 'PASS_WHEEL') {
+        const chat = document.getElementById("chat");
+        chat.scrollTop += deltaY;
+      }
+    });
+
+    /* ----------------------------------------------------
+        ✅ 親ページの IndexedDB を読み取る
+    ---------------------------------------------------- */
+    async function loadIndexedDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open("cardDB", 1);
+
+        req.onerror = () => reject(req.error);
+
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction("analysis", "readonly");
+          const store = tx.objectStore("analysis");
+
+          const getAllReq = store.getAll();
+          getAllReq.onsuccess = () => resolve(getAllReq.result);
+          getAllReq.onerror = () => reject(getAllReq.error);
+        };
+      });
+    }
+
+    /* ----------------------------------------------------
+        ✅ ページ読み込み時に自動で DB を読み取り AI に送信
+    ---------------------------------------------------- */
+    window.addEventListener("DOMContentLoaded", async () => {
+      const chat = document.getElementById("chat");
+
+      try {
+        const allData = await loadIndexedDB();
+
+        if (allData.length === 0) {
+          chat.innerHTML += `<p><b>データなし</b></p>`;
+          chat.scrollTop = chat.scrollHeight;
+          return;
+        }
+
+        const latest = allData[allData.length - 1];
+
+        // idを除いたデータを表示用に作成
+        const displayData = { ...latest };
+        delete displayData.id;
+        
+        // データを美しく表示
+        let dataHtml = '<div><span class="data-badge">最新データ</span><div class="data-content">';
+        
+        if (displayData.data) {
+          dataHtml += `<div class="data-item"><span class="data-label">データ:</span><span class="data-value">${escapeHtml(String(displayData.data))}</span></div>`;
+        }
+        if (displayData.time) {
+          const date = new Date(displayData.time);
+          const timeStr = date.toLocaleString('ja-JP');
+          dataHtml += `<div class="data-item"><span class="data-label">時刻:</span><span class="data-value">${escapeHtml(timeStr)}</span></div>`;
+        }
+        
+        dataHtml += '</div></div>';
+        chat.innerHTML += dataHtml;
+        chat.scrollTop = chat.scrollHeight;
+
+        // ✅ AI に送信（idを含む完全なデータを送信）
+        const res = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: JSON.stringify(latest) }),
+        });
+
+        const data = await res.json();
+
+        // Markdownの太字記法（**text**）をHTMLの太字に変換
+        let replyText = data.reply;
+        replyText = replyText.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        replyText = escapeHtml(replyText);
+        
+        chat.innerHTML += `
+          <div style="margin-top: 16px;">
+            <span class="ai-badge">AI解析</span>
+            <div class="ai-content">${replyText}</div>
+          </div>
+        `;
+        chat.scrollTop = chat.scrollHeight;
+
+      } catch (err) {
+        chat.innerHTML += `<p><b>エラー:</b> ${err}</p>`;
+        chat.scrollTop = chat.scrollHeight;
+      }
+    });
+
+    /* ----------------------------------------------------
+        ✅ 手動チャット送信
+    ---------------------------------------------------- */
+    async function sendMessage() {
+      const input = document.getElementById("input");
+      const chat = document.getElementById("chat");
+      const textContent = input.value;
+
+      if (!textContent) return;
+
+      chat.innerHTML += `<p><b>あなた:</b> ${textContent}</p>`;
+      input.value = "";
+      chat.scrollTop = chat.scrollHeight;
+
+      try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: textContent }),
+      });
+
+      const data = await res.json();
+
+        // HTMLエスケープ関数
+        function escapeHtml(text) {
+          const div = document.createElement('div');
+          div.textContent = text;
+          return div.innerHTML;
+        }
+        
+        // Markdownの太字記法（**text**）をHTMLの太字に変換
+        let replyText = data.reply;
+        replyText = replyText.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        replyText = escapeHtml(replyText);
+        
+        chat.innerHTML += `
+          <div style="margin-top: 16px;">
+            <span class="ai-badge">AI</span>
+            <div class="ai-content">${replyText}</div>
+          </div>
+        `;
+        chat.scrollTop = chat.scrollHeight;
+      } catch (err) {
+        chat.innerHTML += `<p><b>エラー:</b> ${err.message}</p>`;
+      chat.scrollTop = chat.scrollHeight;
+      }
+    }
+
+    document.getElementById("input").addEventListener("keydown", function (event) {
+      if (event.key === "Enter") {
+        sendMessage();
+      }
+    });
+  </script>
+</body>
+</html>
