@@ -1,175 +1,181 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>Auto Capture AI Chat</title>
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      background: radial-gradient(circle at top left, #0f2027, #203a43, #2c5364);
-      font-family: "Segoe UI", "Hiragino Sans", sans-serif;
-      color: #fff;
-      overflow-y: auto;
-    }
-    main {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
-      min-height: 100vh;
-      padding: 2em 1em;
-    }
-    #chat {
-      width: 80%;
-      max-width: 600px;
-      height: 300px;
-      overflow-y: auto;
-      margin-bottom: 1em;
-      padding: 1em;
-      backdrop-filter: blur(20px) saturate(180%);
-      background-color: rgba(255, 255, 255, 0.1);
-      border-radius: 16px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-    }
-    #input {
-      width: 70%;
-      padding: 0.6em;
-      border-radius: 8px;
-      border: none;
-      font-size: 1em;
-      margin-right: 0.5em;
-    }
-    button {
-      padding: 0.6em 1em;
-      border: none;
-      border-radius: 12px;
-      background: linear-gradient(135deg, #00c6ff, #0072ff);
-      color: #fff;
-      font-weight: bold;
-      cursor: pointer;
-      transition: all 0.3s ease;
-    }
-    button:hover {
-      transform: scale(1.05);
-      background: linear-gradient(135deg, #0072ff, #00c6ff);
-    }
-    .chat-controls {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      flex-wrap: wrap;
-      margin-bottom: 2em;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>Dr.Cube AI解析</title>
+
+<style>
+html, body {
+  margin: 0;
+  padding: 0;
+  background: radial-gradient(circle at top left, #0f2027, #203a43, #2c5364);
+  font-family: "Segoe UI", "Hiragino Sans", sans-serif;
+  color: #fff;
+}
+
+main {
+  max-width: 900px;
+  margin: auto;
+  padding: 2em 1em;
+}
+
+h1 {
+  text-align: center;
+  margin-bottom: 1.5em;
+}
+
+.card {
+  background: rgba(255,255,255,0.1);
+  backdrop-filter: blur(16px);
+  border-radius: 16px;
+  padding: 1.2em;
+  margin-bottom: 1.2em;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+}
+
+.card h2 {
+  margin-top: 0;
+  font-size: 1.2em;
+  border-bottom: 1px solid rgba(255,255,255,0.2);
+  padding-bottom: 0.3em;
+}
+
+.keywords img {
+  width: 100%;
+  max-height: 240px;
+  object-fit: contain;
+  margin-top: 1em;
+  border-radius: 12px;
+  background: rgba(0,0,0,0.2);
+}
+
+.links a {
+  display: block;
+  color: #00c6ff;
+  margin-bottom: 0.4em;
+  text-decoration: none;
+}
+.links a:hover {
+  text-decoration: underline;
+}
+</style>
 </head>
 
 <body>
-  <main>
-    <h1>Dr.Cube AI解析 /Team.ぐんまちゃん/</h1>
+<main>
+  <h1>Dr.Cube AI解析レポート</h1>
 
-    <div id="chat">
-      <p>お手伝いできることはありますか？</p>
+  <div id="output"></div>
+</main>
+
+<script>
+const API_URL = "https://dr-cube-1.onrender.com/chat";
+
+/* =========================
+   図解・参考マッピング
+========================= */
+const visualMap = {
+  "WebRTC": {
+    img: "https://webrtc.org/assets/images/webrtc-diagram.svg",
+    youtube: "https://www.youtube.com/watch?v=FExZvpVvYxA"
+  },
+  "IndexedDB": {
+    img: "https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API/Using_IndexedDB/indexeddb.png",
+    youtube: "https://www.youtube.com/watch?v=Q7nH8nC3Cjg"
+  },
+  "AI": {
+    img: "https://miro.medium.com/v2/resize:fit:1200/1*eK1v7E3z7u1K7GQ6jP8zDw.png",
+    youtube: "https://www.youtube.com/watch?v=ad79nYk2keg"
+  }
+};
+
+/* =========================
+   IndexedDB 読み取り
+========================= */
+function loadIndexedDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open("cardDB", 1);
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      const db = req.result;
+      const tx = db.transaction("analysis", "readonly");
+      const store = tx.objectStore("analysis");
+      const getAll = store.getAll();
+      getAll.onsuccess = () => resolve(getAll.result);
+    };
+  });
+}
+
+/* =========================
+   AI解析を構造化
+========================= */
+function structureText(text) {
+  const sentences = text.split(/。|\n/).filter(Boolean);
+
+  return {
+    summary: sentences.slice(0, 2).join("。") + "。",
+    explanation: sentences.slice(2).join("。") + "。",
+    keywords: Object.keys(visualMap).filter(k => text.includes(k))
+  };
+}
+
+/* =========================
+   表示生成
+========================= */
+function renderReport(structured) {
+  const out = document.getElementById("output");
+
+  // 要点
+  out.innerHTML += `
+    <div class="card">
+      <h2>🔍 要点まとめ</h2>
+      <p>${structured.summary}</p>
     </div>
+  `;
 
-    <div class="chat-controls">
-      <input id="input" placeholder="メッセージを入力..." />
-      <button onclick="sendMessage()">送信</button>
+  // 解説
+  out.innerHTML += `
+    <div class="card">
+      <h2>🧠 解説</h2>
+      <p>${structured.explanation}</p>
     </div>
-  </main>
+  `;
 
-  <script>
-    const API_URL = "https://dr-cube-1.onrender.com/chat";
+  // 図解・参考
+  structured.keywords.forEach(k => {
+    const v = visualMap[k];
+    out.innerHTML += `
+      <div class="card keywords">
+        <h2>📊 図で理解：${k}</h2>
+        <img src="${v.img}">
+        <div class="links">
+          <h3>🎥 参考動画</h3>
+          <a href="${v.youtube}" target="_blank">${v.youtube}</a>
+        </div>
+      </div>
+    `;
+  });
+}
 
-    /* ----------------------------------------------------
-        ✅ 親ページの IndexedDB を読み取る
-    ---------------------------------------------------- */
-    async function loadIndexedDB() {
-      return new Promise((resolve, reject) => {
-        const req = indexedDB.open("cardDB", 1);
+/* =========================
+   起動処理
+========================= */
+window.addEventListener("DOMContentLoaded", async () => {
+  const data = await loadIndexedDB();
+  if (!data.length) return;
 
-        req.onerror = () => reject(req.error);
+  const latest = data[data.length - 1];
 
-        req.onsuccess = () => {
-          const db = req.result;
-          const tx = db.transaction("analysis", "readonly");
-          const store = tx.objectStore("analysis");
+  const res = await fetch(API_URL, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ message: JSON.stringify(latest) })
+  });
 
-          const getAllReq = store.getAll();
-          getAllReq.onsuccess = () => resolve(getAllReq.result);
-          getAllReq.onerror = () => reject(getAllReq.error);
-        };
-      });
-    }
-
-    /* ----------------------------------------------------
-        ✅ ページ読み込み時に自動で DB を読み取り AI に送信
-    ---------------------------------------------------- */
-    window.addEventListener("DOMContentLoaded", async () => {
-      const chat = document.getElementById("chat");
-
-      chat.innerHTML += `<p><b>IndexedDB 読み取り中...</b></p>`;
-
-      try {
-        const allData = await loadIndexedDB();
-
-        if (allData.length === 0) {
-          chat.innerHTML += `<p><b>IndexedDB は空です。</b></p>`;
-          return;
-        }
-
-        const latest = allData[allData.length - 1]; // ✅ 最新データ
-
-        chat.innerHTML += `<p><b>最新データ:</b> ${JSON.stringify(latest)}</p>`;
-
-        // ✅ AI に送信
-        const res = await fetch(API_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: JSON.stringify(latest) }),
-        });
-
-        const data = await res.json();
-
-        chat.innerHTML += `<p><b>AI解析:</b> ${data.reply}</p>`;
-        chat.scrollTop = chat.scrollHeight;
-
-      } catch (err) {
-        chat.innerHTML += `<p style="color:red;"><b>IndexedDB 読み取りエラー:</b> ${err}</p>`;
-      }
-    });
-
-    /* ----------------------------------------------------
-        ✅ 手動チャット送信
-    ---------------------------------------------------- */
-    async function sendMessage() {
-      const input = document.getElementById("input");
-      const chat = document.getElementById("chat");
-      const textContent = input.value;
-
-      if (!textContent) return;
-
-      chat.innerHTML += `<p><b>あなた:</b> ${textContent}</p>`;
-      input.value = "";
-
-      const res = await fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: textContent }),
-      });
-
-      const data = await res.json();
-
-      chat.innerHTML += `<p><b>AI:</b> ${data.reply}</p>`;
-      chat.scrollTop = chat.scrollHeight;
-    }
-
-    document.getElementById("input").addEventListener("keydown", function (event) {
-      if (event.key === "Enter") {
-        sendMessage();
-      }
-    });
-  </script>
+  const json = await res.json();
+  const structured = structureText(json.reply);
+  renderReport(structured);
+});
+</script>
 </body>
 </html>
