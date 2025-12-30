@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr.Cube</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <!-- ページコンテンツ -->
+    <div class="page-container">
+        <!-- アップロードページ -->
+        <div class="page active" id="upload-page">
+            <div class="image-container">
+                <img src="アップロード.webp" alt="画像アップロードページ" class="page-image">
+            </div>
+        </div>
+
+        <!-- AI解析ページ -->
+        <div class="page" id="ai-analysis-page">
+            <div class="image-container">
+                <img src="AI解析.webp" alt="AI解析ページ" class="page-image">
+            </div>
+        </div>
+
+        <!-- 発想ページ -->
+        <div class="page" id="idea-page">
+            <div class="image-container">
+                <img src="発想.webp" alt="発想ページ" class="page-image">
+            </div>
+        </div>
+
+        <!-- 深掘りページ -->
+        <div class="page" id="deep-dive-page">
+            <div class="image-container">
+                <img src="深掘り.webp" alt="深掘りページ" class="page-image">
+            </div>
+        </div>
+    </div>
+
+    <!-- 固定フッター -->
+    <footer class="fixed-footer">
+        <button class="menu-item active" data-page="upload-page">
+            <svg class="menu-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                    d="M12 15V3M12 3L8 7M12 3L16 7M3 17V19C3 20.1046 3.89543 21 5 21H19C20.1046 21 21 20.1046 21 19V17M3 17L7 13M3 17L11 17M21 17L17 13M21 17L13 17M7 13L12 8L17 13M7 13H17"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span class="menu-label">アップロード</span>
+        </button>
+        <button class="menu-item" data-page="ai-analysis-page">
+            <svg class="menu-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                    d="M9.663 17H4.5C3.67157 17 3 16.3284 3 15.5V4.5C3 3.67157 3.67157 3 4.5 3H19.5C20.3284 3 21 3.67157 21 4.5V9.663M9.663 17L12 19.337M9.663 17H15.5C16.3284 17 17 16.3284 17 15.5V9.5M12 19.337L15.5 22.837M12 19.337V15.5C12 14.6716 12.6716 14 13.5 14H17M17 9.5V13.5C17 14.3284 16.3284 15 15.5 15H13.5M17 9.5L20.5 6M20.5 6L23 8.5M20.5 6V9.5"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span class="menu-label">AI解析</span>
+        </button>
+        <button class="menu-item" data-page="idea-page">
+            <svg class="menu-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                    d="M12 2C8.13 2 5 5.13 5 9C5 11.38 6.19 13.47 8 14.74V17C8 17.5523 8.44772 18 9 18H15C15.5523 18 16 17.5523 16 17V14.74C17.81 13.47 19 11.38 19 9C19 5.13 15.87 2 12 2Z"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M9 21H15" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                <path d="M10 18V21" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                <path d="M14 18V21" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round" />
+            </svg>
+            <span class="menu-label">発想</span>
+        </button>
+        <button class="menu-item" data-page="deep-dive-page">
+            <svg class="menu-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round" />
+            </svg>
+            <span class="menu-label">深掘り</span>
+        </button>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

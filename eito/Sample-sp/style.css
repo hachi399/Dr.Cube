@@ -1,0 +1,178 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background-color: #000;
+    overflow-x: hidden;
+    padding-bottom: 100px; /* フッターのスペースを確保 */
+}
+
+/* ページコンテナ */
+.page-container {
+    position: relative;
+    width: 100%;
+    min-height: calc(100vh - 100px);
+}
+
+/* ページ */
+.page {
+    display: none;
+    width: 100%;
+    padding: 0;
+}
+
+.page.active {
+    display: block;
+}
+
+/* 画像コンテナ */
+.image-container {
+    width: 100%;
+    max-width: 414px; /* スマホサイズ（iPhoneなど） */
+    margin: 20px auto 0 auto;
+    position: relative;
+    overflow: hidden;
+    background-color: #000;
+    /* スマホのアスペクト比（9:16）に合わせる */
+    aspect-ratio: 9 / 16;
+    height: calc(100vh - 100px);
+    max-height: 896px; /* iPhone 11 Pro Maxの高さ */
+}
+
+/* 画像のトリミングと表示 */
+.page-image {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+    object-position: center;
+    /* スマホ画面サイズに合わせてトリミング */
+}
+
+/* 固定フッター */
+.fixed-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-width: 414px; /* スマホサイズに合わせる */
+    margin: 0 auto;
+    background-color: #1a1a1a;
+    border-top: 1px solid #333;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    padding: 12px 8px;
+    z-index: 1000;
+    /* 角丸を最大に */
+    border-radius: 30px 30px 0 0;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* メニューアイテム */
+.menu-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px 4px;
+    transition: all 0.3s ease;
+    color: #888;
+    min-width: 0;
+}
+
+.menu-item:hover {
+    color: #fff;
+    transform: translateY(-2px);
+}
+
+.menu-item.active {
+    color: #4CAF50; /* アクティブ時の緑色 */
+}
+
+.menu-item.active .menu-icon {
+    transform: scale(1.1);
+}
+
+/* SVGアイコン */
+.menu-icon {
+    width: 24px;
+    height: 24px;
+    transition: all 0.3s ease;
+    stroke: currentColor;
+    fill: none;
+}
+
+.menu-item.active .menu-icon {
+    stroke-width: 2.5;
+}
+
+/* メニューラベル */
+.menu-label {
+    font-size: 10px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+/* レスポンシブ対応 */
+@media (max-width: 414px) {
+    .fixed-footer {
+        max-width: 100%;
+        border-radius: 25px 25px 0 0;
+    }
+    
+    .image-container {
+        max-width: 100%;
+    }
+    
+    .menu-label {
+        font-size: 9px;
+    }
+    
+    .menu-icon {
+        width: 22px;
+        height: 22px;
+    }
+}
+
+@media (min-width: 415px) {
+    body {
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+    }
+    
+    .page-container {
+        max-width: 414px;
+    }
+}
+
+/* アニメーション */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.page.active {
+    animation: fadeIn 0.3s ease;
+}
+
