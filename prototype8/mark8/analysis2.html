@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>AI画像解析 + Wikipedia補助表示</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+body {
+  margin: 0;
+  padding: 20px;
+  font-family: system-ui, sans-serif;
+  background: radial-gradient(circle at top left, #0f2027, #203a43, #2c5364);
+  color: #fff;
+}
+
+h1 {
+  font-size: 22px;
+  margin-bottom: 12px;
+}
+
+#result {
+  margin-top: 20px;
+  padding: 16px;
+  border-radius: 12px;
+  background: rgba(0,0,0,0.35);
+}
+
+#analysis-text {
+  white-space: pre-wrap;
+  line-height: 1.7;
+  margin-bottom: 16px;
+}
+
+.wiki-box {
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.08);
+  text-align: center;
+}
+
+.wiki-box img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.wiki-box a {
+  color: #7ecbff;
+  text-decoration: none;
+  font-size: 14px;
+}
+</style>
+</head>
+
+<body>
+
+<h1>AI画像解析</h1>
+
+<input type="file" id="imageInput" accept="image/*">
+<button onclick="analyzeImage()">解析</button>
+
+<div id="result" hidden>
+  <div id="analysis-text"></div>
+  <div id="wiki-area"></div>
+</div>
+
+<script>
+const API_URL = "https://dr-cube-1.onrender.com/chat";
+
+/* ===============================
+   メイン
+================================ */
+async function analyzeImage(){
+  const file = document.getElementById("imageInput").files[0];
+  if(!file) return alert("画像を選択してください");
+
+  const base64 = await toBase64(file);
+
+  const prompt = `
+この画像を解析し、
+1. 内容を簡潔に説明
+2. Wikipedia検索用の代表キーワードを1語
+JSON形式で返してください。
+
+{
+  "analysis": "...",
+  "keyword": "例"
+}
+`;
+
+  const res = await fetch(API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt, image: base64 })
+  });
+
+  const data = await res.json();
+
+  document.getElementById("result").hidden = false;
+  document.getElementById("analysis-text").textContent = data.analysis;
+
+  loadWikipediaWithFallback(data.keyword);
+}
+
+/* ===============================
+   Wikipedia（フォールバック付き）
+================================ */
+async function loadWikipediaWithFallback(keyword){
+  const area = document.getElementById("wiki-area");
+  area.innerHTML = "Wikipediaから図を取得中…";
+
+  // ① キーワードページ
+  const primary = await fetchWikiSummary(keyword);
+  if(primary?.thumbnail){
+    renderWiki(primary);
+    return;
+  }
+
+  // ② ランダムページ（最大5回）
+  for(let i = 0; i < 5; i++){
+    const random = await fetchRandomWiki();
+    if(random?.thumbnail){
+      renderWiki(random);
+      return;
+    }
+  }
+
+  area.innerHTML = "<p>図を取得できませんでした</p>";
+}
+
+/* ===============================
+   Wikipedia API
+================================ */
+async function fetchWikiSummary(title){
+  try {
+    const url = `https://ja.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
+    const res = await fetch(url);
+    if(!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+async function fetchRandomWiki(){
+  try {
+    const url = "https://ja.wikipedia.org/api/rest_v1/page/random/summary";
+    const res = await fetch(url);
+    if(!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+/* ===============================
+   表示
+================================ */
+function renderWiki(data){
+  document.getElementById("wiki-area").innerHTML = `
+    <div class="wiki-box">
+      <img src="${data.thumbnail.source}" alt="Wikipedia image">
+      <a href="${data.content_urls.desktop.page}" target="_blank">
+        Wikipediaで詳しく
+      </a>
+    </div>
+  `;
+}
+
+/* ===============================
+   Utility
+================================ */
+function toBase64(file){
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.readAsDataURL(file);
+  });
+}
+</script>
+
+</body>
+</html>
