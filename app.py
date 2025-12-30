@@ -11,8 +11,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # 公開時は ["https://あなたのgithub.io"] に変更
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-CSRF-Token", "Access-Control-Allow-Origin"]
 )
 
 # === OpenAIクライアント ===
