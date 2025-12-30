@@ -40,9 +40,9 @@ h1 {
   padding-bottom: 0.3em;
 }
 
-.keywords img {
+.card img {
   width: 100%;
-  max-height: 240px;
+  max-height: 260px;
   object-fit: contain;
   margin-top: 1em;
   border-radius: 12px;
@@ -50,9 +50,9 @@ h1 {
 }
 
 .links a {
-  display: block;
+  display: inline-block;
+  margin-top: 0.6em;
   color: #00c6ff;
-  margin-bottom: 0.4em;
   text-decoration: none;
 }
 .links a:hover {
@@ -64,30 +64,11 @@ h1 {
 <body>
 <main>
   <h1>Dr.Cube AI解析レポート</h1>
-
   <div id="output"></div>
 </main>
 
 <script>
 const API_URL = "https://dr-cube-1.onrender.com/chat";
-
-/* =========================
-   図解・参考マッピング
-========================= */
-const visualMap = {
-  "WebRTC": {
-    img: "https://webrtc.org/assets/images/webrtc-diagram.svg",
-    youtube: "https://www.youtube.com/watch?v=FExZvpVvYxA"
-  },
-  "IndexedDB": {
-    img: "https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API/Using_IndexedDB/indexeddb.png",
-    youtube: "https://www.youtube.com/watch?v=Q7nH8nC3Cjg"
-  },
-  "AI": {
-    img: "https://miro.medium.com/v2/resize:fit:1200/1*eK1v7E3z7u1K7GQ6jP8zDw.png",
-    youtube: "https://www.youtube.com/watch?v=ad79nYk2keg"
-  }
-};
 
 /* =========================
    IndexedDB 読み取り
@@ -107,7 +88,7 @@ function loadIndexedDB() {
 }
 
 /* =========================
-   AI解析を構造化
+   解析文を構造化
 ========================= */
 function structureText(text) {
   const sentences = text.split(/。|\n/).filter(Boolean);
@@ -115,46 +96,87 @@ function structureText(text) {
   return {
     summary: sentences.slice(0, 2).join("。") + "。",
     explanation: sentences.slice(2).join("。") + "。",
-    keywords: Object.keys(visualMap).filter(k => text.includes(k))
+    keywords: extractKeywords(text)
   };
+}
+
+/* =========================
+   キーワード抽出（軽量・実践向け）
+========================= */
+function extractKeywords(text) {
+  const words = text
+    .replace(/[。、]/g, " ")
+    .split(/\s+/)
+    .filter(w =>
+      w.length >= 2 &&
+      !["これ", "それ", "ため", "よう", "です", "ます"].includes(w)
+    );
+
+  // 出現回数順
+  const freq = {};
+  words.forEach(w => freq[w] = (freq[w] || 0) + 1);
+
+  return Object.entries(freq)
+    .sort((a, b) => b[1] - a[1])
+    .map(e => e[0])
+    .slice(0, 3);
+}
+
+/* =========================
+   Wikipedia 画像取得
+========================= */
+async function fetchWikiVisual(keyword) {
+  const url = `https://ja.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(keyword)}`;
+
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (data.thumbnail && data.thumbnail.source) {
+      return {
+        title: data.title,
+        img: data.thumbnail.source,
+        link: data.content_urls.desktop.page
+      };
+    }
+  } catch (e) {
+    console.warn("Wikipedia取得失敗:", keyword);
+  }
+  return null;
 }
 
 /* =========================
    表示生成
 ========================= */
-function renderReport(structured) {
+async function renderReport(structured) {
   const out = document.getElementById("output");
 
-  // 要点
-  out.innerHTML += `
+  out.innerHTML = `
     <div class="card">
       <h2>🔍 要点まとめ</h2>
       <p>${structured.summary}</p>
     </div>
-  `;
 
-  // 解説
-  out.innerHTML += `
     <div class="card">
       <h2>🧠 解説</h2>
       <p>${structured.explanation}</p>
     </div>
   `;
 
-  // 図解・参考
-  structured.keywords.forEach(k => {
-    const v = visualMap[k];
+  for (const k of structured.keywords) {
+    const v = await fetchWikiVisual(k);
+    if (!v) continue;
+
     out.innerHTML += `
-      <div class="card keywords">
-        <h2>📊 図で理解：${k}</h2>
+      <div class="card">
+        <h2>📊 図で理解：${v.title}</h2>
         <img src="${v.img}">
         <div class="links">
-          <h3>🎥 参考動画</h3>
-          <a href="${v.youtube}" target="_blank">${v.youtube}</a>
+          <a href="${v.link}" target="_blank">Wikipediaで詳しく読む</a>
         </div>
       </div>
     `;
-  });
+  }
 }
 
 /* =========================
@@ -168,13 +190,13 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   const res = await fetch(API_URL, {
     method: "POST",
-    headers: {"Content-Type":"application/json"},
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message: JSON.stringify(latest) })
   });
 
   const json = await res.json();
   const structured = structureText(json.reply);
-  renderReport(structured);
+  await renderReport(structured);
 });
 </script>
 </body>
