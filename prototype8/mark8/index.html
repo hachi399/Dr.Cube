@@ -1,287 +1,205 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Swipe Card App — Pattern A Full Fixed</title>
+<meta charset="UTF-8">
+<title>Image → AI解析 → Wikipedia</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 
 <style>
-html,body{height:100%;}
-body{
-  margin:0;
-  background:#111;
-  color:#fff;
-  font-family:system-ui;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
+body {
+  margin: 0;
+  padding: 20px;
+  font-family: system-ui, sans-serif;
+  background: #111;
+  color: #fff;
 }
 
-#cardArea{
-  display:flex;
-  width:100vw;
-  height:100vh;
+button {
+  padding: 10px 18px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
 }
 
-.card{
-  flex:1;
-  height:100%;
-  background:#333;
-  border-radius:12px;
-  box-shadow:0 8px 20px rgba(0,0,0,.6);
-  overflow:hidden;
-  position:relative;
-  display:none;
-  flex-direction:column;
+#preview {
+  max-width: 300px;
+  margin-top: 10px;
+  border-radius: 8px;
 }
 
-.card.visible{ display:flex; }
-
-.card-type{ padding:8px 12px; }
-
-.iframe-wrap{ flex:1; }
-iframe{ width:100%; height:100%; border:none; }
-
-.swipe-layer{
-  position:absolute;
-  inset:0;
-  z-index:10;
+.section {
+  margin-top: 20px;
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.08);
 }
 
-#controls{ margin:12px; }
-#log{ font-size:12px; color:#bbb; margin-bottom:8px; }
+#wiki img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+#wiki a {
+  color: #7ecbff;
+  font-size: 14px;
+  text-decoration: none;
+}
 </style>
 </head>
+
 <body>
 
-<div id="cardArea"></div>
+<h2>画像 → AI解析 → Wikipedia</h2>
 
-<div id="controls">
-  <button id="leftBtn">←</button>
-  <button id="rightBtn">→</button>
-  <button id="toggleIframeInteraction">Toggle iframe Interaction</button>
+<input type="file" id="fileInput" accept="image/*">
+<button onclick="analyze()">解析</button>
+
+<img id="preview">
+
+<div class="section">
+  <h3>AI解析文</h3>
+  <div id="analysisText"></div>
 </div>
 
-<div id="log"></div>
+<div class="section">
+  <h3>熟語抽出カード（iframe）</h3>
+  <iframe
+    id="jukugoFrame"
+    src="jukugo_card.html"
+    style="width:100%;height:320px;border:none;border-radius:8px;background:#000;">
+  </iframe>
+</div>
+
+<div class="section">
+  <h3>Wikipedia 図解</h3>
+  <div id="wiki">待機中…</div>
+</div>
 
 <script>
-/* =====================================================
-   iframe ⇄ 親ページ通信用
-===================================================== */
-function sendToIframe(iframe, type, payload){
-  if(!iframe || !iframe.contentWindow) return;
-  iframe.contentWindow.postMessage({ type, payload }, location.origin);
-}
+const API_URL = "https://dr-cube-1.onrender.com/chat";
+let lastImageBase64 = "";
 
-/* ================= IndexedDB ================= */
-const DB_NAME = 'cardDB';
-const STORE = 'analysis';
-let db;
+/* ===============================
+   画像解析
+================================ */
+async function analyze(){
+  const file = document.getElementById("fileInput").files[0];
+  if(!file) return alert("画像を選択してください");
 
-function openDB(){
-  return new Promise((resolve, reject)=>{
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = e => {
-      const db = e.target.result;
-      if(!db.objectStoreNames.contains(STORE)){
-        db.createObjectStore(STORE, { keyPath:'id', autoIncrement:true });
-      }
-    };
-    req.onsuccess = e => { db = e.target.result; resolve(db); };
-    req.onerror = e => reject(e);
+  const base64 = await toBase64(file);
+  lastImageBase64 = base64;
+  document.getElementById("preview").src = base64;
+
+  const prompt = "この画像を解析し、内容を詳しく文章で説明してください。";
+
+  const res = await fetch(API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt, image: base64 })
   });
+
+  const data = await res.json();
+  document.getElementById("analysisText").textContent = data.reply;
+
+  // iframeへ解析文送信
+  document.getElementById("jukugoFrame").contentWindow.postMessage(
+    { type: "ANALYSIS_TEXT", payload: data.reply },
+    location.origin
+  );
 }
 
-function saveResult(data){
-  const tx = db.transaction(STORE, 'readwrite');
-  tx.objectStore(STORE).add({ time:Date.now(), data });
-  tx.oncomplete = ()=>{
-    console.log('IndexedDB saved:', data);
-    broadcastUpdate(data);
-  };
-}
+/* ===============================
+   熟語抽出結果を受信
+================================ */
+window.addEventListener("message", e => {
+  if (e.origin !== location.origin) return;
 
-function broadcastUpdate(data){
-  document.querySelectorAll('iframe').forEach(ifr=>{
-    if(ifr.dataset.cardType === 'analysis' || ifr.dataset.cardType === 'idea'){
-      ifr.contentWindow.postMessage(
-        { type:'DB_UPDATE', payload:data },
-        location.origin
-      );
+  if (e.data.type === "TEXT_RESULT") {
+    let words;
+    try {
+      words = JSON.parse(e.data.payload);
+    } catch {
+      return;
     }
-  });
-}
 
-window.addEventListener('message', event=>{
-  if(event.origin !== location.origin) return;
-  const { type, payload } = event.data || {};
-
-  if(type === 'IMAGE_RESULT'){
-    saveResult(payload);
+    const keyword = chooseKeyword(words);
+    loadWikipediaWithFallback(keyword);
   }
 });
 
-window.addEventListener('message', event => {
-  if(event.origin !== location.origin) return;
-  const { type, payload } = event.data || {};
+/* ===============================
+   Wikipedia
+================================ */
+async function loadWikipediaWithFallback(keyword){
+  const box = document.getElementById("wiki");
+  box.textContent = "Wikipediaから図を取得中…";
 
-  if(type === 'SAVE_WORD'){
-    saveResult({ text: payload });
+  if (keyword) {
+    const primary = await fetchWiki(keyword);
+    if (primary?.thumbnail) return renderWiki(primary);
   }
-});
 
-openDB();
+  for(let i=0;i<5;i++){
+    const random = await fetchRandomWiki();
+    if (random?.thumbnail) return renderWiki(random);
+  }
 
-const logEl = document.getElementById("log");
-function log(msg){ logEl.textContent = msg; console.log(msg); }
-
-/* =====================================================
-   アプリ本体
-===================================================== */
-const PAGE_URL = {
-  idea: "idea.html",
-  analysis: "analysis.html",
-  image: "image.html"
-};
-
-let overlayEnabled = true;
-let globalCount = 0;
-let centerIndex = 3;
-
-let deck = [
-  {id:crypto.randomUUID(), type:'analysis', label:'解析(4)'},
-  {id:crypto.randomUUID(), type:'analysis', label:'解析(6)'},
-  {id:crypto.randomUUID(), type:'idea',     label:'発想(5)'},
-  {id:crypto.randomUUID(), type:'image',    label:'画像'},
-  {id:crypto.randomUUID(), type:'analysis', label:'解析(2)'},
-  {id:crypto.randomUUID(), type:'idea',     label:'発想(3)'},
-  {id:crypto.randomUUID(), type:'idea',     label:'発想(1)'}
-];
-
-const cardArea = document.getElementById("cardArea");
-const cardMap = new Map();
-
-/* ===== util ===== */
-function getVisibleIndices(){
-  const start = Math.max(0, centerIndex - 1);
-  const end   = Math.min(deck.length - 1, centerIndex + 2);
-  const out=[];
-  for(let i=start;i<=end;i++) out.push(i);
-  return out;
+  box.textContent = "図を取得できませんでした";
 }
 
-/* ===== 初回のみカード生成 ===== */
-function createCard(card){
-  const el = document.createElement("div");
-  el.className = "card";
-
-  const label = document.createElement("div");
-  label.className = "card-type";
-  label.textContent = card.label;
-  el.appendChild(label);
-
-  const wrap = document.createElement("div");
-  wrap.className = "iframe-wrap";
-
-  const iframe = document.createElement("iframe");
-  iframe.src = PAGE_URL[card.type];
-  iframe.dataset.cardType = card.type;   // ★ 重要
-  iframe.dataset.cardId   = card.id;
-
-  iframe.addEventListener('load', ()=>{
-    sendToIframe(iframe, 'INIT', { cardType: card.type });
-  });
-
-  wrap.appendChild(iframe);
-  el.appendChild(wrap);
-
-  const overlay = document.createElement("div");
-  overlay.className = "swipe-layer";
-  el.appendChild(overlay);
-
-  let startX = 0;
-  overlay.addEventListener("pointerdown", e=>{
-    overlay.setPointerCapture(e.pointerId);
-    startX = e.clientX;
-  });
-
-  overlay.addEventListener("pointerup", e=>{
-    const dx = e.clientX - startX;
-    if(Math.abs(dx) > 40){
-      const index = deck.findIndex(d=>d.id===card.id);
-      handleSwipe(dx, index);
-    }
-  });
-
-  cardArea.appendChild(el);
-  cardMap.set(card.id, { el, overlay, iframe });
-}
-
-/* ===== render（表示制御のみ） ===== */
-function render(){
-  cardMap.forEach(v=>{
-    v.el.classList.remove("visible");
-  });
-
-  getVisibleIndices().forEach(i=>{
-    const card = deck[i];
-    const entry = cardMap.get(card.id);
-    if(entry){
-      entry.el.classList.add("visible");
-      entry.overlay.style.pointerEvents =
-        overlayEnabled ? "auto" : "none";
-    }
-  });
-}
-
-/* ===== swipe ===== */
-function handleSwipe(dist, index){
-  const type = dist > 0 ? "idea" : "analysis";
-  globalCount++;
-
-  const card = {
-    id: crypto.randomUUID(),
-    type,
-    label: type==="idea"
-      ? `発想(${globalCount})`
-      : `解析(${globalCount})`
-  };
-
-  deck.splice(index + 1, 0, card);
-  createCard(card);
-  centerIndex = index + 1;
-  render();
-}
-
-// 🔧 ボタン状態切り替え
-function setLoading(isLoading) {
-  const btn = document.getElementById("toggleIframeInteraction");
-  if (isLoading) {
-    btn.textContent = "サイト…";
-    btn.classList.add("loading");
-    btn.disabled = true;
-  } else {
-    btn.textContent = "スワイプ";
-    btn.classList.remove("loading");
-    btn.disabled = false;
+async function fetchWiki(title){
+  try {
+    const res = await fetch(
+      `https://ja.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`
+    );
+    if(!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
   }
 }
 
-/* ===== 初期化 ===== */
-deck.forEach(createCard);
-render();
+async function fetchRandomWiki(){
+  try {
+    const res = await fetch(
+      "https://ja.wikipedia.org/api/rest_v1/page/random/summary"
+    );
+    if(!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
 
-/* ===== controls ===== */
-leftBtn.onclick = ()=>{
-  if(centerIndex>0){ centerIndex--; render(); }
-};
-rightBtn.onclick = ()=>{
-  if(centerIndex<deck.length-1){ centerIndex++; render(); }
-};
-toggleIframeInteraction.onclick = ()=>{
-  overlayEnabled = !overlayEnabled;
-  render();
-};
+function renderWiki(data){
+  document.getElementById("wiki").innerHTML = `
+    <img src="${data.thumbnail.source}">
+    <a href="${data.content_urls.desktop.page}" target="_blank">
+      Wikipediaで詳しく
+    </a>
+  `;
+}
+
+/* ===============================
+   熟語選択ロジック
+================================ */
+function chooseKeyword(words){
+  if(!words || words.length === 0) return null;
+  return [...words].sort((a,b)=>b.length-a.length)[0];
+}
+
+/* ===============================
+   Utility
+================================ */
+function toBase64(file){
+  return new Promise(resolve=>{
+    const r = new FileReader();
+    r.onload = ()=>resolve(r.result);
+    r.readAsDataURL(file);
+  });
+}
 </script>
+
 </body>
 </html>
