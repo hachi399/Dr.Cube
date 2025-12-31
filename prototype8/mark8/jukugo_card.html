@@ -26,14 +26,24 @@ window.addEventListener("message", async e => {
   if (e.data.type !== "ANALYSIS_TEXT") return;
 
   const text = e.data.payload;
-  document.getElementById("status").textContent = "抽出中…";
+
+  // 🔴 追加：解析文が無効なら中断
+  if (!text || text.trim().length < 5) {
+    document.getElementById("status").textContent =
+      "解析文が不足しているため熟語抽出できません";
+    return;
+  }
+
+  document.getElementById("status").textContent = "熟語抽出中…";
 
   const prompt = `
+以下の文章から
+・熟語（2字以上の漢字のまとまり）
+のみを抽出し、
+JSON配列のみで返してください。
+
 文章:
 ${text}
-
-上の文章から熟語（2字以上の漢字のまとまり）のみを
-JSON配列で抽出してください。
 `;
 
   const res = await fetch(API_URL, {
@@ -43,6 +53,14 @@ JSON配列で抽出してください。
   });
 
   const data = await res.json();
+
+  // 🔴 追加：JSONらしくなければ破棄
+  if (!data.reply || !data.reply.trim().startsWith("[")) {
+    document.getElementById("status").textContent =
+      "熟語を抽出できませんでした";
+    return;
+  }
+
   document.getElementById("status").textContent = data.reply;
 
   parent.postMessage(
@@ -50,6 +68,7 @@ JSON配列で抽出してください。
     location.origin
   );
 });
+
 </script>
 
 </body>

@@ -116,7 +116,9 @@ window.addEventListener("message", e => {
   if (e.origin !== location.origin) return;
 
   if (e.data.type === "TEXT_RESULT") {
-    let words;
+  if (!e.data.payload.startsWith("[")) return;
+  const words = JSON.parse(e.data.payload);
+    
     try {
       words = JSON.parse(e.data.payload);
     } catch {
