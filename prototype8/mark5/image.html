@@ -139,6 +139,31 @@ const LEFT_EYE_OUTER = 33;
 const RIGHT_EYE_OUTER = 263;
 const LEFT_EYE_IDS = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246];
 
+function updateUI() {
+    const btnTrain = document.getElementById("btn-train");    // 学習
+    const btnSample = document.getElementById("btn-sample");  // サンプリング
+    const btnsnap = document.getElementById("btn-snap");      // スナップ
+
+    if (trainMode) {
+        btnTrain.style.display = "inline-block";
+    } else {
+        btnTrain.style.display = "none";
+    }
+    if (calibrationMode) {
+        //btnTrain.style.display = "none";
+        btnSample.style.display = "inline-block";
+    } else {
+        //btnTrain.style.display = "inline-block";
+        btnSample.style.display = "none";
+    }
+    if (snapMode){
+        btnsnap.style.display = "inline-block";
+    } else {
+        btnsnap.style.display = "none";
+    }
+
+}
+
 // ==========================================
 // IndexedDB 管理クラス
 // ==========================================
@@ -204,7 +229,7 @@ class StorageDB {
         const tx = this.db.transaction(["snapshots"], "readwrite");
         tx.objectStore("snapshots").add(snap);
     }
-    // StorageDBクラスの中の clearAll をこう書き換えてね
+    
     async clearAll() {
         if (!this.db) {
             console.warn("DB is not opened yet.");
@@ -216,29 +241,36 @@ class StorageDB {
             "readwrite"
         );
 
-        tx.objectStore("calibration").clear();
-        tx.objectStore("model").clear();
-        tx.objectStore("snapshots").clear();
-        tx.objectStore("settings").clear();
+        const stores = [
+            tx.objectStore("calibration"),
+            tx.objectStore("model"),
+            tx.objectStore("snapshots"),
+            tx.objectStore("settings")
+        ];
 
-        // メモリ側も完全リセット
-        let db = new StorageDB();
-        let faceMesh;
-        let videoFront, videoFish, canvasFront, ctxFront, canvasFish, ctxFish;
-        let calibrationData = [];
-        let currentModel = null;
-        let samplingBuffer = [];
-        let snapBuffer = [];
-        let calibrationMode = true;
-        let calibIndex = 0;
-        let isSampling = false;
-        let activeGaze3D = null; // 最新の3D視線
-        let activeGazeDir = null;
-        let activeEyeCenter = null; // L_C
-        let activeIris3D    = null; // L_I
+        await Promise.all(
+            stores.map(store => new Promise(res => {
+                const req = store.clear();
+                req.onsuccess = () => res();
+            }))
+        );
+
+        // ✅ グローバル状態を直接リセット
+        calibrationData = [];
+        currentModel = null;
+        samplingBuffer = [];
+        snapBuffer = [];
+        calibrationMode = false;
+        trainMode = false;
+        snapMode = false;
+        calibIndex = 0;
+        isSampling = false;
+
+        updateUI();
 
         console.log("All DB and runtime states cleared.");
     }
+
 
     async saveSetting(key, value) {
         const tx = this.db.transaction(["settings"], "readwrite");
@@ -253,6 +285,8 @@ class StorageDB {
         tx.objectStore("calibration").clear();
         tx.objectStore("model").clear();
         tx.objectStore("snapshots").clear();
+
+        console.log("clear Calibration Only");
     }
     async loadSetting(key) {
         return new Promise(resolve => {
@@ -475,13 +509,16 @@ let calibrationData = [];
 let currentModel = null;
 let samplingBuffer = [];
 let snapBuffer = [];
-let calibrationMode = true;
+let calibrationMode = false;
+let trainMode = false;
 let calibIndex = 0;
 let isSampling = false;
 let activeGaze3D = null; // 最新の3D視線
 let activeGazeDir = null;
 let activeEyeCenter = null; // L_C
 let activeIris3D    = null; // L_I
+let snapMode = false;
+updateUI();
 
 // フィルタ
 const pitchFilter = new OneEuroFilter();
@@ -512,14 +549,19 @@ async function startApp() {
     // ★ 状態を復元に合わせて決める
     if (currentModel && calibrationData.length >= MIN_CALIB_POINTS) {
         calibrationMode = false;
+        snapMode = true;
+        trainMode = false;
         calibIndex = calibrationData.length;
     } else if (calibrationData.length > 0) {
         calibrationMode = true;
+        trainMode = false;
         calibIndex = calibrationData.length;
     } else {
         calibrationMode = true;
+        trainMode = false;
         calibIndex = 0;
     }
+    updateUI();
 
     // カメラ起動
     const frontId = document.getElementById('sel-cam-front').value;
@@ -962,6 +1004,9 @@ async function finishSampling() {
     samplingBuffer = [];
     
     if(calibIndex >= MIN_CALIB_POINTS) {
+        calibrationMode = false;
+        trainMode = true;
+        updateUI();
         console.log("All points collected.");
     console.log("calibrationData.length:", calibrationData.length);
     }
@@ -1136,7 +1181,9 @@ window.onload = async () => {
     
     document.getElementById('btn-calib-start').onclick = () => {
         calibrationMode = true;
+        trainMode = false;
         calibIndex = 0;
+        updateUI();
         console.log("calibrationData.length:", calibrationData.length);
     };
 
@@ -1307,7 +1354,10 @@ window.onload = async () => {
         currentModel = model;
         await db.saveModel(model.coef_u, model.coef_v);
         calibrationMode = false;
+        trainMode = false;
         alert("学習完了！DBに保存しました。");
+        snapMode = true;
+        updateUI();
     };
     document.getElementById('btn-train').onclick = triggerTrain;
 
