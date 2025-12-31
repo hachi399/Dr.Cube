@@ -7,7 +7,7 @@
   body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #222; color: #eee; margin: 0; padding: 20px; }
   h1 { font-size: 1.2rem; color: #ff7eb3; margin-bottom: 10px; }
   .container { display: flex; gap: 20px; flex-wrap: wrap; }
-  .panel { flex: 1; min-width: 480px; background: #333; padding: 10px; border-radius: 8px; }
+  .panel { flex: 1; min-width: 240px; background: #333; padding: 10px; border-radius: 8px; }
   canvas { background: #000; width: 100%; border-radius: 4px; }
   .controls { margin-top: 10px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   button { padding: 8px 16px; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; }
@@ -16,6 +16,9 @@
   select { padding: 8px; border-radius: 4px; }
   .status { margin-top: 10px; color: #aaa; font-size: 0.9rem; white-space: pre-wrap; }
   #calibration-overlay { position: relative; }
+  .panel-front {flex: 0 0 260px;}
+  #canvas-front {width: 100%;height: auto;}
+
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -45,7 +48,6 @@
       <button id="btn-sample" class="primary">サンプリング(Space)</button>
       <button id="btn-train" class="secondary">学習実行(t)</button>
       <button id="btn-snap" class="secondary">スナップショット(s)</button>
-      <button id="btn-show-data" class="secondary">保存データ表示</button>
     </div>
     <div id="data-display-area" style="margin-top:20px; background:#444; padding:10px; border-radius:8px; display:none;">
         <h4>Calibration Data / Snapshots</h4>
@@ -79,7 +81,8 @@
   </div>
 
   <!-- Front -->
-  <div class="panel">
+  <div class="panel panel-front">
+    
     <h3>Front Camera (MediaPipe Analysis)</h3>
     <div style="position: relative;">
       <video id="video-front" style="display:none;" autoplay playsinline></video>
@@ -112,17 +115,17 @@ const CONFIG = {
         };
 
 // 定数
-const SAMPLE_FRAMES = 15;
+const SAMPLE_FRAMES = 20;
 const MIN_SAMPLES = 10;
 const FISH_POINTS_RATIO = [
   // 中央密集
+  [0.40, 0.30], [0.50, 0.30], [0.60, 0.30],
   [0.40, 0.40], [0.50, 0.40], [0.60, 0.40],
   [0.40, 0.50], [0.50, 0.50], [0.60, 0.50],
-  [0.40, 0.60], [0.50, 0.60], [0.60, 0.60],
 
   // 少し外
-  [0.3, 0.3], [0.7, 0.3],
-  [0.3, 0.7], [0.7, 0.7]
+  [0.3, 0.2], [0.7, 0.2],
+  [0.3, 0.6], [0.7, 0.6]
 ];
 const MIN_CALIB_POINTS = FISH_POINTS_RATIO.length;
 
@@ -258,8 +261,6 @@ class StorageDB {
             req.onsuccess = () => resolve(req.result ? req.result.value : null);
         });
     }
-
-    
 }
 
 // ==========================================
@@ -426,23 +427,19 @@ function solveLeastSquares(A_data, Y_data, rows, cols) {
             let currentVal = matAtA.doubleAt(i, i);
             matAtA.doublePtr(i, i)[0] = currentVal + alpha;
         }
-
         // --- 計算実行 ---
         let solved = cv.solve(matAtA, matAtY, matX, cv.DECOMP_QR);
         if (!solved) {
             solved = cv.solve(matAtA, matAtY, matX, cv.DECOMP_SVD);
         }
-
         if (!solved) {
             console.warn("cv.solve failed to find a solution.");
             return new Array(cols).fill(0);
         }
-
         const result = [];
         for(let i=0; i<cols; i++) {
             result.push(matX.doubleAt(i, 0) * yMax);
         }
-
         return result;
 
     } catch(e) {
@@ -454,7 +451,6 @@ function solveLeastSquares(A_data, Y_data, rows, cols) {
         mats.forEach(m => { if(m && !m.isDeleted()) m.delete(); });
     }
 }
-
 
 function gaze3d_dir_to_fish(pt, dir, model) {
     if (!model) return null;
@@ -486,7 +482,6 @@ let activeGaze3D = null; // 最新の3D視線
 let activeGazeDir = null;
 let activeEyeCenter = null; // L_C
 let activeIris3D    = null; // L_I
-
 
 // フィルタ
 const pitchFilter = new OneEuroFilter();
@@ -525,7 +520,6 @@ async function startApp() {
         calibrationMode = true;
         calibIndex = 0;
     }
-
 
     // カメラ起動
     const frontId = document.getElementById('sel-cam-front').value;
@@ -670,7 +664,6 @@ function drawGazePointsOnly(canvasFish, gazePoints) {
     }
 }
 
-
 // ==========================================
 // ズーム・パン対応の描画関数
 // ==========================================
@@ -711,10 +704,7 @@ function drawUndistortedWithZoom(canvas, matFrame, gazePoints=[], zoomLevel=2.0,
         sx, sy, viewW, viewH,       // 元画像の切り出し矩形
         0, 0, canvas.width, canvas.height  // 表示先キャンバス全体
     );
-
 }
-
-
 
 // ----------------------------------------------------------------
 // 視線処理ロジック (process_frame_for_gaze)
@@ -786,7 +776,6 @@ async function onFaceResults(results) {
         if(left_eye_center) {
             left_center_3d = pixel_to_camera(left_eye_center, distance);
         }
-        
 
         // 5. 眼球中心オフセット
         let left_eye_center_offset = null;
@@ -967,7 +956,7 @@ async function finishSampling() {
 
     calibrationData.push(data);
     await db.saveCalibData(calibrationData);
-    
+
     console.log(`Point ${calibIndex+1} Saved:`, data);
     calibIndex++;
     samplingBuffer = [];
@@ -994,7 +983,6 @@ function captureRawFishImage(video) {
 /* ===============================
    編集・スナップショット関連
    =============================== */
-
 
 async function saveSnapshotFromCanvas(sourceCanvas, sx, sy, sw, sh) {
     // 1. 画像の切り抜き処理
@@ -1071,7 +1059,6 @@ async function saveSnapshotFromCanvas(sourceCanvas, sx, sy, sw, sh) {
 
     alert("解析完了！親ページにデータを送りました。");
 }
-
 
 // --- 編集エディタ用のグローバル変数 ---
 let editImageData = null; 
@@ -1150,8 +1137,6 @@ window.onload = async () => {
     document.getElementById('btn-calib-start').onclick = () => {
         calibrationMode = true;
         calibIndex = 0;
-        //calibrationData = [];
-        //db.saveCalibData([]); // clear
         console.log("calibrationData.length:", calibrationData.length);
     };
 
@@ -1174,7 +1159,6 @@ window.onload = async () => {
         const mean3d = [sum[0]/snapBuffer.length, sum[1]/snapBuffer.length, sum[2]/snapBuffer.length];
         const uv = gaze3d_dir_to_fish(mean3d, activeGazeDir, currentModel);
 
-
         if(uv) {
             // --- 編集初期値 ---
             editGazeUV = uv;
@@ -1183,7 +1167,6 @@ window.onload = async () => {
             
             // --- 画像取得 ---
             const matFrame = await undistortFishFrame(videoFish);
-
             const imgData = new ImageData(new Uint8ClampedArray(matFrame.data), matFrame.cols, matFrame.rows);
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = matFrame.cols;
@@ -1201,7 +1184,6 @@ window.onload = async () => {
                 matFrame.delete(); // メモリ解放
             };
 
-
             // ======== ログ出力 ========
             console.group("📸 Snapshot Triggered");
             console.log("snapBuffer length:", snapBuffer.length);
@@ -1214,7 +1196,6 @@ window.onload = async () => {
             console.log("canvasFish size:", canvasFish.width, "x", canvasFish.height);
             console.groupEnd();
             // ==========================
-
         }
     };
     document.getElementById('btn-snap').onclick = triggerSnap;
@@ -1270,7 +1251,6 @@ window.onload = async () => {
         );
     };
 
-
     canvasEdit.addEventListener('mouseup', async () => {
         if (cropRect.w > 10 && cropRect.h > 10) {
             await saveSnapshotFromCanvas(
@@ -1283,9 +1263,6 @@ window.onload = async () => {
             cropRect = {x:0,y:0,w:0,h:0}; // ← 忘れずリセット
         }
     });
-
-
-
 
     document.getElementById('btn-cancel-edit').onclick = () => {
         document.getElementById('edit-panel').style.display = 'none';
@@ -1309,7 +1286,6 @@ window.onload = async () => {
         if(e.key === "s") triggerSnap();
         if(e.key === "c") document.getElementById('btn-calib-start').click();
     });
-
     
     // サンプリング (Space / Enter)
     const triggerSample = () => {
@@ -1334,8 +1310,6 @@ window.onload = async () => {
         alert("学習完了！DBに保存しました。");
     };
     document.getElementById('btn-train').onclick = triggerTrain;
-
-    
 
         // DBリセット
         // window.onload の中の btn-reset-db の部分
