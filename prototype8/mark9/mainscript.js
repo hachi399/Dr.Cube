@@ -16,7 +16,7 @@
       const userMessage = input.value;
       if (!userMessage) return;
 
-      chat.innerHTML += `<p><b>あなた:</b> ${userMessage}</p>`;
+      chat.innerHTML += `<p><b>あなた:</b> ${userMessage}</p> <b>この内容について図や表、絵文字などを駆使して小学生でもわかる説明文を作成してください</b>`;
       input.value = "";
 
       const res = await fetch(API_URL, {
