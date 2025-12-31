@@ -115,10 +115,16 @@ const CONFIG = {
 const SAMPLE_FRAMES = 15;
 const MIN_SAMPLES = 10;
 const FISH_POINTS_RATIO = [
-  [0.25, 0.25], [0.50, 0.25], [0.75, 0.25],
-  [0.25, 0.50], [0.50, 0.50], [0.75, 0.50],
-  [0.25, 0.75], [0.50, 0.75], [0.75, 0.75]
+  // 中央密集
+  [0.40, 0.40], [0.50, 0.40], [0.60, 0.40],
+  [0.40, 0.50], [0.50, 0.50], [0.60, 0.50],
+  [0.40, 0.60], [0.50, 0.60], [0.60, 0.60],
+
+  // 少し外
+  [0.3, 0.3], [0.7, 0.3],
+  [0.3, 0.7], [0.7, 0.7]
 ];
+const MIN_CALIB_POINTS = FISH_POINTS_RATIO.length;
 
 // MediaPipe ID Definitions
 const ID_TOP = 10;
@@ -449,7 +455,7 @@ let calibrationData = [];
 let currentModel = null;
 let samplingBuffer = [];
 let snapBuffer = [];
-let displayBuffer = []; // 15フレーム平均表示用の専用バッファ
+//let displayBuffer = []; // 15フレーム平均表示用の専用バッファ
 let calibrationMode = true;
 let calibIndex = 0;
 let isSampling = false;
@@ -457,6 +463,7 @@ let activeGaze3D = null; // 最新の3D視線
 let activeGazeDir = null;
 let activeEyeCenter = null; // L_C
 let activeIris3D    = null; // L_I
+
 
 // フィルタ
 const pitchFilter = new OneEuroFilter();
@@ -485,9 +492,9 @@ async function startApp() {
     currentModel = await db.loadModel();
 
     // ★ 状態を復元に合わせて決める
-    if (currentModel && calibrationData.length >= 9) {
+    if (currentModel && calibrationData.length >= MIN_CALIB_POINTS) {
         calibrationMode = false;
-        calibIndex = 9;
+        calibIndex = calibrationData.length;
     } else if (calibrationData.length > 0) {
         calibrationMode = true;
         calibIndex = calibrationData.length;
@@ -777,7 +784,7 @@ async function onFaceResults(results) {
 
             // 指定: gaze_vec = L_I - L_C (表示用)
             const gaze_vec = Vec3.sub(L_I, L_C);
-            const dir = activeGazeDir;
+            //const dir = activeGazeDir;
             // 指定: gaze_mark_vec = L_C - L_I (注視点用)
             const gaze_mark_vec = Vec3.sub(L_C, L_I);
 
@@ -819,6 +826,7 @@ async function onFaceResults(results) {
     ctxFront.restore();
 }
 
+let sampleStartTime = 0;
 // ループ処理（魚眼側の描画・ロジック）
 async function loop() {
     // 正面カメラの解析実行
@@ -839,8 +847,6 @@ async function loop() {
         // 魚眼映像描画
         const matFrame = await undistortFishFrame(videoFish); // 歪み補正だけ
         drawMatOnCanvas(canvasFish, matFrame); // 歪み補正のみ
-        
-        //ctxFish.drawImage(videoFish, 0, 0, canvasFish.width, canvasFish.height);
 
         // キャリブレーションモードUI
         if(calibrationMode) {
@@ -854,15 +860,15 @@ async function loop() {
                 
                 ctxFish.fillStyle = "white";
                 ctxFish.font = "30px Arial";
-                ctxFish.fillText(`Point ${calibIndex+1}/9`, 30, 50);
+                ctxFish.fillText(`Point ${calibIndex+1}/${MIN_CALIB_POINTS}`, 30, 50);
 
                 if(isSampling) {
                     ctxFish.fillText("Sampling...", tx + 30, ty);
                 }
             } else {
-                 ctxFish.fillStyle = "lime";
-                 ctxFish.font = "30px Arial";
-                 ctxFish.fillText("Calibration Done. Press 't' to train.", 30, 50);
+                ctxFish.fillStyle = "lime";
+                ctxFish.font = "30px Arial";
+                ctxFish.fillText("Calibration Done. Press 't' to train.", 30, 50);
             }
         } else {
             // 推論モード
@@ -878,7 +884,7 @@ async function loop() {
 
             const uv = gaze3d_dir_to_fish(activeGaze3D, activeGazeDir, currentModel);
 
-            displayBuffer.push(activeGaze3D);
+            //displayBuffer.push(activeGaze3D);
             if(uv) {
                 // Buffer for smooth
                 snapBuffer.push(activeGaze3D);
@@ -898,6 +904,7 @@ async function loop() {
         
     }
     
+    
     // サンプリング処理
     if(isSampling && activeGaze3D) {
         samplingBuffer.push(activeGaze3D);
@@ -905,12 +912,16 @@ async function loop() {
              finishSampling();
         }
     }
+    
 
     requestAnimationFrame(loop);
 }
 
 // サンプリング完了処理
 async function finishSampling() {
+    const elapsed = performance.now() - sampleStartTime;
+    console.log("sampling duration:", elapsed.toFixed(0), "ms");
+
     isSampling = false;
     if(samplingBuffer.length < MIN_SAMPLES) {
         console.log("Sampling failed (not enough frames)");
@@ -947,7 +958,7 @@ async function finishSampling() {
     calibIndex++;
     samplingBuffer = [];
     
-    if(calibIndex >= 9) {
+    if(calibIndex >= MIN_CALIB_POINTS) {
         console.log("All points collected.");
     }
 }
@@ -1124,8 +1135,8 @@ window.onload = async () => {
     document.getElementById('btn-calib-start').onclick = () => {
         calibrationMode = true;
         calibIndex = 0;
-        calibrationData = [];
-        db.saveCalibData([]); // clear
+        //calibrationData = [];
+        //db.saveCalibData([]); // clear
     };
 
     // --- スナップショットボタン ---
@@ -1286,17 +1297,18 @@ window.onload = async () => {
     
     // サンプリング (Space / Enter)
     const triggerSample = () => {
-        if(calibrationMode && calibIndex < 9 && !isSampling) {
+        if(calibrationMode && calibIndex < MIN_CALIB_POINTS && !isSampling) {
             samplingBuffer = [];
             isSampling = true;
+            sampleStartTime = performance.now();
         }
     };
     document.getElementById('btn-sample').onclick = triggerSample;
 
     // 学習 (t)
     const triggerTrain = async () => {
-        if(calibrationData.length < 9) {
-            alert("データ不足です (9点必要)"); return;
+        if(calibrationData.length < MIN_CALIB_POINTS) {
+            alert(`データ不足です (${MIN_CALIB_POINTS}点必要)`); return;
         }
         console.log("Training...");
         const model = train_model_from_calib(calibrationData);
