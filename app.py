@@ -3,6 +3,10 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 import os
+import matplotlib.pyplot as plt
+import numpy as np
+import io
+import base64
 
 app = FastAPI()
 
@@ -23,23 +27,24 @@ def root():
     return {"message": "API is running correctly!"}
 
 
+# ============================================================
+# ① 通常チャット & 画像解析（スイッチ式）
+# ============================================================
 @app.post("/chat")
 async def chat(request: Request):
     data = await request.json()
     user_message = data.get("message", "")
     image_b64 = data.get("image", None)
-    mode = data.get("mode", "default")  # ← ここでモードを受け取る（"default", "kids" など）
+    mode = data.get("mode", "default")
 
     try:
         # =========================
-        # 画像付きリクエストの場合
+        # 画像解析
         # =========================
         if image_b64:
-            # mode によって画像説明のスタイルを変えたい場合
             if mode == "kids":
                 system_prompt = (
                     "あなたは小学生にもわかるように、絵文字や図を使ってやさしく画像を説明するAIです。"
-                    "むずかしい言葉は使わず、楽しく、分かりやすく説明してください。"
                 )
             else:
                 system_prompt = "あなたは画像を分析し、内容を丁寧に説明するAIアシスタントです。"
@@ -47,21 +52,12 @@ async def chat(request: Request):
             completion = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {
-                        "role": "system",
-                        "content": system_prompt,
-                    },
+                    {"role": "system", "content": system_prompt},
                     {
                         "role": "user",
                         "content": [
-                            {
-                                "type": "text",
-                                "text": user_message or "この画像を解析してください。",
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": image_b64},
-                            },
+                            {"type": "text", "text": user_message or "この画像を解析してください。"},
+                            {"type": "image_url", "image_url": {"url": image_b64}},
                         ],
                     },
                 ],
@@ -74,37 +70,29 @@ async def chat(request: Request):
                 ai_reply = content
 
         # =========================
-        # テキストのみチャットの場合
+        # テキストチャット
         # =========================
         else:
-            # --- mode に応じてプロンプト＆モデルをスイッチ ---
             if mode == "kids":
-                # 小学生向けの説明モード（絵文字・図・表を積極活用）
                 system_prompt = (
                     "あなたは説明がとても上手なAIです。小学生でもわかるように、"
-                    "やさしい言葉と絵文字や図、簡単な表を使って楽しく説明してください。"
-                    "専門用語はできるだけ使わず、使う場合は必ずかんたんに説明してください。"
+                    "絵文字や図や表を使って楽しく説明してください。"
                 )
                 model_name = "gpt-4o-mini"
 
             elif mode == "business":
-                # ビジネス文書モード
                 system_prompt = (
                     "あなたはビジネス向けの丁寧で簡潔な文章を作成するAIです。"
-                    "敬体（です・ます調）で、論理的かつ読みやすく説明してください。"
                 )
                 model_name = "gpt-4o-mini"
 
             elif mode == "creative":
-                # 創作・アイデア出しモード
                 system_prompt = (
                     "あなたは創造的でユーモアのある文章を作成するAIです。"
-                    "発想力豊かに、面白く、時には比喩や物語も交えて回答してください。"
                 )
                 model_name = "gpt-4o-mini"
 
             else:
-                # デフォルト（従来の通常チャット）
                 system_prompt = "あなたは親切で知的なAIアシスタントです。"
                 model_name = "gpt-3.5-turbo"
 
@@ -121,3 +109,51 @@ async def chat(request: Request):
 
     except Exception as e:
         return {"reply": f"エラーが発生しました: {str(e)}"}
+
+
+# ============================================================
+# ② グラフ生成 API（本物の画像を返す）
+# ============================================================
+@app.post("/graph")
+async def graph(request: Request):
+    """
+    例：
+    {
+        "formula": "2*x+3",
+        "xmin": -10,
+        "xmax": 10
+    }
+    """
+    data = await request.json()
+    formula = data.get("formula", "2*x+3")
+    xmin = data.get("xmin", -10)
+    xmax = data.get("xmax", 10)
+
+    try:
+        # x の値を生成
+        x = np.linspace(xmin, xmax, 200)
+
+        # 文字列の式を Python として評価
+        y = eval(formula)
+
+        # グラフ生成
+        fig, ax = plt.subplots()
+        ax.plot(x, y, label=f"y = {formula}")
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.set_title("Graph")
+        ax.grid(True)
+        ax.legend()
+
+        # 画像をバイナリに変換
+        buf = io.BytesIO()
+        plt.savefig(buf, format="png")
+        buf.seek(0)
+        img_b64 = base64.b64encode(buf.read()).decode()
+
+        plt.close(fig)
+
+        return {"image": img_b64}
+
+    except Exception as e:
+        return {"error": f"グラフ生成中にエラー: {str(e)}"}
