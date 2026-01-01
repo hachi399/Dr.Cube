@@ -9,32 +9,49 @@
     let autoCaptureInterval = null;
   
 
-    // ====== ChatGPTとの通常会話 ======
     async function sendMessage() {
-      const input = document.getElementById("input");
-      const chat = document.getElementById("chat");
-      const userMessage = input.value;
-      if (!userMessage) return;
+  const input = document.getElementById("input");
+  const chat = document.getElementById("chat");
+  const userMessage = input.value;
+  if (!userMessage) return;
 
-      chat.innerHTML += `<p><b>あなた:</b> ${userMessage}</p> <b>この内容について図や表、絵文字などを駆使して小学生でもわかる説明文を作成してください</b>`;
-      input.value = "";
-//------------------------------------------------------------変更点
-      const res = await fetch("https://dr-cube-1.onrender.com/graph", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    formula: "2*x+3",
-    xmin: -10,
-    xmax: 10
-  })
-});
+  chat.innerHTML += `<p><b>あなた:</b> ${userMessage}</p>`;
+  input.value = "";
 
-const data = await res.json();
-document.getElementById("graph").src = "data:image/png;base64," + data.image;
-//------------------------------------------------------------
-      chat.innerHTML += `<p><b>AI:</b> ${data.reply}</p>`;
-      chat.scrollTop = chat.scrollHeight;
-    }
+  // === 通常チャットを /chat に送る ===
+  const res = await fetch(API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: userMessage,
+      mode: "kids"  // ← 小学生向け説明モード
+    })
+  });
+
+  const data = await res.json();
+
+  chat.innerHTML += `<p><b>AI:</b> ${data.reply}</p>`;
+  chat.scrollTop = chat.scrollHeight;
+}
+
+//-----------------------------------グラフ生成
+async function generateGraph() {
+  const res = await fetch(API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      mode: "graph",
+      formula: "2*x+3",
+      xmin: -10,
+      xmax: 10
+    })
+  });
+
+  const data = await res.json();
+  document.getElementById("graph").src =
+    "data:image/png;base64," + data.image;
+}
+//-----------------------------------グラフ生成ここまで
 
 document.getElementById("input").addEventListener("keydown", function(event) {
   if (event.key === "Enter") {
