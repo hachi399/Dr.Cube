@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gemini Chat App - Complete</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- Markdownレンダリング用 -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- Mermaidレンダリング用 -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <!-- コードハイライト用 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <!-- サイドバー -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h2>Gemini Chat</h2>
+        <button class="btn-icon" id="newChatBtn" title="新しいチャット">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- プロジェクト管理セクション -->
+      <div class="projects-section">
+        <h3>プロジェクト</h3>
+        <button class="btn-secondary" id="newProjectBtn">+ 新規プロジェクト</button>
+        <div id="projectsList" class="projects-list"></div>
+      </div>
+
+      <!-- プロンプトテンプレート -->
+      <div class="templates-section">
+        <h3>プロンプトテンプレート</h3>
+        <select id="templateSelect" class="template-select">
+          <option value="default">デフォルト</option>
+          <option value="creative">創造的</option>
+          <option value="technical">技術的</option>
+          <option value="casual">カジュアル</option>
+          <option value="educational">教育的</option>
+          <option value="business">ビジネス</option>
+          <option value="code">コード生成</option>
+          <option value="analysis">分析</option>
+        </select>
+        <button class="btn-secondary" id="customTemplateBtn">カスタムテンプレート</button>
+      </div>
+
+      <!-- チャット履歴 -->
+      <div class="history-section">
+        <h3>チャット履歴</h3>
+        <div id="chatHistoryList" class="chat-history-list"></div>
+        <button class="btn-secondary" id="clearHistoryBtn">履歴をクリア</button>
+      </div>
+
+      <!-- YouTube検索 -->
+      <div class="youtube-section">
+        <h3>YouTube検索</h3>
+        <div class="youtube-search">
+          <input type="text" id="youtubeSearchInput" placeholder="検索..." class="youtube-input">
+          <button class="btn-icon" id="youtubeSearchBtn" title="検索">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <path d="m21 21-4.35-4.35"></path>
+            </svg>
+          </button>
+        </div>
+        <div id="youtubeResults" class="youtube-results"></div>
+      </div>
+    </aside>
+
+    <!-- メインコンテンツ -->
+    <main class="main-content">
+      <!-- チャットエリア -->
+      <div class="chat-container" id="chatContainer">
+        <div class="welcome-message">
+          <h1>Gemini Chatへようこそ</h1>
+          <p>メッセージを送信するか、ファイルをアップロードして会話を始めましょう。</p>
+          <div class="welcome-features">
+            <div class="feature-item">
+              <strong>📁 ファイルアップロード</strong>
+              <p>画像や動画をアップロードして分析できます</p>
+            </div>
+            <div class="feature-item">
+              <strong>📊 表・図のレンダリング</strong>
+              <p>MarkdownとMermaid図表をサポート</p>
+            </div>
+            <div class="feature-item">
+              <strong>🎬 YouTube連携</strong>
+              <p>YouTube動画を検索して会話に追加</p>
+            </div>
+            <div class="feature-item">
+              <strong>💬 プロンプトテンプレート</strong>
+              <p>用途に応じたテンプレートを選択</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 入力エリア -->
+      <div class="input-area">
+        <div class="input-wrapper">
+          <!-- ファイルアップロードボタン -->
+          <label for="fileInput" class="file-upload-btn" title="ファイルをアップロード">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+            </svg>
+          </label>
+          <input type="file" id="fileInput" accept="image/*,video/*,.pdf,.txt,.doc,.docx" multiple style="display: none;">
+          
+          <!-- テキスト入力 -->
+          <textarea 
+            id="messageInput" 
+            placeholder="メッセージを入力..." 
+            rows="1"
+          ></textarea>
+          
+          <!-- 送信ボタン -->
+          <button id="sendBtn" class="send-btn" title="送信">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+            </svg>
+          </button>
+        </div>
+        
+        <!-- ファイルプレビュー -->
+        <div id="filePreview" class="file-preview"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- プロジェクト作成モーダル -->
+  <div id="projectModal" class="modal">
+    <div class="modal-content">
+      <h3>新規プロジェクト</h3>
+      <input type="text" id="projectNameInput" placeholder="プロジェクト名" class="modal-input">
+      <textarea id="projectDescInput" placeholder="説明（オプション）" class="modal-textarea"></textarea>
+      <div class="modal-actions">
+        <button class="btn-primary" id="createProjectBtn">作成</button>
+        <button class="btn-secondary" id="cancelProjectBtn">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- カスタムテンプレートモーダル -->
+  <div id="templateModal" class="modal">
+    <div class="modal-content">
+      <h3>カスタムプロンプトテンプレート</h3>
+      <textarea id="customTemplateInput" placeholder="プロンプトテンプレートを入力..." class="modal-textarea" rows="6"></textarea>
+      <div class="modal-actions">
+        <button class="btn-primary" id="saveTemplateBtn">保存</button>
+        <button class="btn-secondary" id="cancelTemplateBtn">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
+
