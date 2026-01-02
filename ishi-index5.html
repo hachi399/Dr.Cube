@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Gaze Tracking Web（赤点修正版）</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.js"></script>
+
+<style>
+body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #222;
+  color: white;
+  font-family: sans-serif;
+}
+.canvas-container {
+  position: relative;
+  margin: 10px;
+  border: 2px solid #444;
+}
+canvas {
+  background: black;
+}
+.info {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(0,0,0,0.6);
+  padding: 5px;
+}
+</style>
+</head>
+
+<body>
+
+<h1>Gaze Tracker（赤点修正版）</h1>
+<p>Enter/Space: サンプル | T: 学習 | C: リセット</p>
+
+<div class="canvas-container">
+  <canvas id="fishCanvas" width="1280" height="720"></canvas>
+  <div class="info">Fish View</div>
+</div>
+
+<div class="canvas-container">
+  <canvas id="frontCanvas" width="640" height="480"></canvas>
+  <div class="info">Front Debug</div>
+</div>
+
+<video id="input_video" style="display:none;"></video>
+<video id="fish_video_src" style="display:none;"></video>
+
+<script>
+/* =========================
+   基本設定
+========================= */
+
+const fishCanvas = document.getElementById("fishCanvas");
+const frontCanvas = document.getElementById("frontCanvas");
+const fishCtx = fishCanvas.getContext("2d");
+
+const FISH_WIDTH  = fishCanvas.width;
+const FISH_HEIGHT = fishCanvas.height;
+
+/* ★ キャンバスサイズ基準で再定義（超重要） */
+const fishPoints = [
+  [FISH_WIDTH*0.25, FISH_HEIGHT*0.25],
+  [FISH_WIDTH*0.50, FISH_HEIGHT*0.25],
+  [FISH_WIDTH*0.75, FISH_HEIGHT*0.25],
+  [FISH_WIDTH*0.25, FISH_HEIGHT*0.50],
+  [FISH_WIDTH*0.50, FISH_HEIGHT*0.50],
+  [FISH_WIDTH*0.75, FISH_HEIGHT*0.50],
+  [FISH_WIDTH*0.25, FISH_HEIGHT*0.75],
+  [FISH_WIDTH*0.50, FISH_HEIGHT*0.75],
+  [FISH_WIDTH*0.75, FISH_HEIGHT*0.75],
+];
+
+let calibMode = true;
+let calibIndex = 0;
+
+/* =========================
+   描画関数
+========================= */
+
+function drawText(ctx, txt, x, y, color="white") {
+  ctx.fillStyle = color;
+  ctx.font = "18px Arial";
+  ctx.fillText(txt, x, y);
+}
+
+function drawTarget(ctx, x, y, label) {
+  ctx.beginPath();
+  ctx.arc(x, y, 20, 0, Math.PI*2);
+  ctx.fillStyle = "rgba(255,0,0,0.8)";
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "white";
+  ctx.stroke();
+  drawText(ctx, label, x + 25, y + 6, "red");
+}
+
+/* =========================
+   MediaPipe 初期化
+========================= */
+
+let faceMesh;
+let frontResults = null;
+
+async function setupMediaPipe() {
+  faceMesh = new FaceMesh({
+    locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`
+  });
+
+  faceMesh.setOptions({
+    maxNumFaces: 1,
+    refineLandmarks: true,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5
+  });
+
+  faceMesh.onResults(res => frontResults = res);
+}
+
+/* =========================
+   起動処理
+========================= */
+
+async function start() {
+  await setupMediaPipe();
+
+  const stream = await navigator.mediaDevices.getUserMedia({ video:true });
+  const video = document.getElementById("input_video");
+  video.srcObject = stream;
+  video.play();
+
+  const cam = new Camera(video, {
+    onFrame: async () => {
+      await faceMesh.send({ image: video });
+    }
+  });
+  cam.start();
+
+  mainLoop();
+}
+
+/* =========================
+   メインループ
+========================= */
+
+function mainLoop() {
+
+  function tick() {
+
+    /* ★ 毎フレーム完全クリア */
+    fishCtx.clearRect(0,0,FISH_WIDTH,FISH_HEIGHT);
+
+    /* 仮背景（黒） */
+    fishCtx.fillStyle = "#000";
+    fishCtx.fillRect(0,0,FISH_WIDTH,FISH_HEIGHT);
+
+    /* ★ 赤点は FaceMesh に関係なく必ず描画 */
+    if (calibMode && calibIndex < fishPoints.length) {
+      const [x,y] = fishPoints[calibIndex];
+      drawTarget(
+        fishCtx,
+        x, y,
+        `Point ${calibIndex+1}/9`
+      );
+    }
+
+    drawText(fishCtx, "Calibration Mode", 30, 40, "lime");
+
+    requestAnimationFrame(tick);
+  }
+
+  tick();
+}
+
+/* =========================
+   キー操作（確認用）
+========================= */
+
+window.addEventListener("keydown", e => {
+  if (e.key === "Enter" || e.key === " ") {
+    calibIndex = Math.min(calibIndex + 1, fishPoints.length - 1);
+  }
+  if (e.key === "c") {
+    calibIndex = 0;
+    calibMode = true;
+  }
+});
+
+/* ========================= */
+
+window.onload = start;
+</script>
+</body>
+</html>

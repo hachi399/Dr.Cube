@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Image → 名詞抽出（ローカル辞書同梱版）</title>
+  <style>
+    :root { --bg:#0f1720; --panel:#071826; --accent:#0ea5a4; --muted:#9fb6bd; --card:#082a2a; }
+    body { margin:0; padding:20px; font-family:system-ui, "Hiragino Kaku Gothic ProN", "メイリオ", sans-serif; background:var(--bg); color:#e6eef8; }
+    h1 { margin:0 0 12px 0; font-size:20px; }
+    .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    .panel { background:var(--panel); padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.03); }
+    input[type="file"] { color:#e6eef8; }
+    button { background:var(--accent); color:#042022; border:none; padding:10px 14px; border-radius:8px; cursor:pointer; }
+    button:disabled { opacity:0.5; cursor:default; }
+    #preview { margin-top:12px; max-width:320px; border-radius:8px; display:block; }
+    textarea { width:100%; min-height:120px; margin-top:8px; padding:10px; border-radius:8px; background:#071016; color:#e6eef8; border:1px solid #12303a; resize:vertical; }
+    .words { margin-top:10px; display:flex; gap:8px; flex-wrap:wrap; }
+    .word { background:var(--card); padding:6px 10px; border-radius:6px; color:#bfecec; font-size:14px; }
+    .meta { color:var(--muted); font-size:13px; margin-top:8px; }
+    .split { margin-top:8px; display:flex; gap:8px; align-items:center; }
+    .small { font-size:13px; color:var(--muted); }
+  </style>
+</head>
+<body>
+  <h1>Image → 名詞抽出（ローカル辞書同梱版）</h1>
+
+  <div class="panel">
+    <div class="row">
+      <label><strong>画像を選択</strong></label>
+      <input type="file" id="fileInput" accept="image/*" />
+      <button id="analyzeImageBtn" disabled>画像を解析して抽出</button>
+    </div>
+
+    <img id="preview" alt="" />
+
+    <div style="margin-top:10px;">
+      <strong>APIからのテキスト（生）</strong>
+      <textarea id="apiText" placeholder="ここにAPIからのテキストが表示されます" readonly></textarea>
+    </div>
+
+    <div style="margin-top:10px;">
+      <div class="split">
+        <button id="extractBtn" disabled>名詞を抽出</button>
+        <button id="copyBtn" disabled>抽出結果をコピー</button>
+        <span id="status" class="meta">辞書を読み込み中…</span>
+      </div>
+      <div class="small">※ kuromoji の辞書ファイル（dict フォルダ）と kuromoji.js をこの HTML と同じフォルダに置いてください。</div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:12px;">
+    <strong>抽出された名詞</strong>
+    <div id="wordList" class="words" aria-live="polite"></div>
+    <div id="count" class="meta"></div>
+  </div>
+
+  <script>
+  /**
+   * 注意（必須）
+   * - この HTML と同じディレクトリに以下を配置してください:
+   *   1) kuromoji.js
+   *   2) dict/ （kuromoji の辞書ファイル群）
+   *
+   * 例:
+   *   /project/
+   *     index.html   <-- このファイル
+   *     kuromoji.js
+   *     dict/
+   *       unk.def
+   *       ...
+   *
+   * ローカルに配置するとネットワークのブロックやトラッキング防止の影響を受けず高速に動作します。
+   */
+
+  // --- 設定 ---
+  const API_URL = "https://dr-cube-1.onrender.com/chat"; // 画像解析用 API（必要に応じて変更）
+  const KUROMOJI_SCRIPT = "./kuromoji.js"; // ローカルに置いた kuromoji.js を参照
+  const DIC_PATH = "./dict/"; // ローカル dict フォルダ
+
+  // --- UI 要素 ---
+  const fileInput = document.getElementById("fileInput");
+  const preview = document.getElementById("preview");
+  const analyzeImageBtn = document.getElementById("analyzeImageBtn");
+  const apiTextEl = document.getElementById("apiText");
+  const extractBtn = document.getElementById("extractBtn");
+  const statusEl = document.getElementById("status");
+  const wordListEl = document.getElementById("wordList");
+  const countEl = document.getElementById("count");
+  const copyBtn = document.getElementById("copyBtn");
+
+  // --- 状態 ---
+  let tokenizer = null;
+  let kuromojiLoaded = false;
+
+  // --- ローカル kuromoji.js を動的に読み込む ---
+  function loadKuromojiScript() {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = KUROMOJI_SCRIPT;
+      s.onload = () => resolve();
+      s.onerror = (e) => reject(new Error("kuromoji.js の読み込みに失敗しました"));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function initKuromoji() {
+    try {
+      await loadKuromojiScript();
+      // kuromoji がグローバルに定義されている前提
+      if (typeof kuromoji === "undefined") throw new Error("kuromoji が見つかりません");
+      statusEl.textContent = "辞書を構築中…";
+      kuromoji.builder({ dicPath: DIC_PATH }).build((err, tk) => {
+        if (err) {
+          console.error(err);
+          statusEl.textContent = "辞書の構築に失敗しました";
+          return;
+        }
+        tokenizer = tk;
+        kuromojiLoaded = true;
+        statusEl.textContent = "辞書準備完了";
+        analyzeImageBtn.disabled = false;
+        extractBtn.disabled = false;
+      });
+    } catch (err) {
+      console.error(err);
+      statusEl.textContent = "kuromoji の読み込みに失敗しました";
+    }
+  }
+
+  // 初期化
+  initKuromoji();
+
+  // --- 画像読み込み ---
+  fileInput.addEventListener("change", (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) {
+      preview.src = "";
+      analyzeImageBtn.disabled = true;
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      preview.src = ev.target.result;
+      analyzeImageBtn.disabled = !kuromojiLoaded ? true : false;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // --- 画像を API に送ってテキストを取得する ---
+  analyzeImageBtn.addEventListener("click", async () => {
+    const imgSrc = preview.src;
+    if (!imgSrc) return;
+    analyzeImageBtn.disabled = true;
+    statusEl.textContent = "画像を解析中…";
+    apiTextEl.value = "";
+    wordListEl.innerHTML = "";
+    countEl.textContent = "";
+
+    try {
+      // API に送るペイロード（API の仕様に合わせて調整してください）
+      const payload = { prompt: "以下の画像から読み取れる文章を出力してください。画像: " + imgSrc, image: imgSrc };
+
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) throw new Error("API Error: " + res.status);
+      const data = await res.json();
+      const text = (data?.reply || data?.text || "").trim();
+      apiTextEl.value = text || "(APIからテキストが返りませんでした)";
+
+      statusEl.textContent = "API テキスト取得完了";
+      extractBtn.disabled = !kuromojiLoaded ? true : false;
+    } catch (err) {
+      console.error(err);
+      apiTextEl.value = "";
+      statusEl.textContent = "画像解析に失敗しました";
+      alert("画像解析に失敗しました: " + err.message);
+    } finally {
+      analyzeImageBtn.disabled = false;
+    }
+  });
+
+  // --- 名詞抽出（大きなテキストでも UI をブロックしないよう分割処理） ---
+  extractBtn.addEventListener("click", () => {
+    const text = apiTextEl.value.trim();
+    if (!text) {
+      alert("解析対象のテキストがありません");
+      return;
+    }
+    if (!tokenizer) {
+      alert("解析エンジンが準備できていません");
+      return;
+    }
+    wordListEl.innerHTML = "";
+    countEl.textContent = "";
+    statusEl.textContent = "名詞を抽出中…";
+    extractBtn.disabled = true;
+    copyBtn.disabled = true;
+
+    // テキストを適度なチャンクに分割（句点や改行で分割）
+    const chunks = text.split(/(?<=[。．！？\n])/).map(s => s.trim()).filter(Boolean);
+
+    const nouns = [];
+    const seen = new Set();
+    let idx = 0;
+
+    function processNextBatch() {
+      const BATCH = 6; // 一度に処理するチャンク数（UI ブロックを避けるため小さめ）
+      const end = Math.min(idx + BATCH, chunks.length);
+      for (; idx < end; idx++) {
+        const c = chunks[idx];
+        try {
+          const tokens = tokenizer.tokenize(c);
+          for (const t of tokens) {
+            // 名詞判定: pos === '名詞'
+            if (t.pos === "名詞") {
+              const w = t.surface_form.trim();
+              if (w && !seen.has(w)) {
+                seen.add(w);
+                nouns.push(w);
+              }
+            }
+          }
+        } catch (e) {
+          console.error("tokenize error:", e);
+        }
+      }
+
+      // 進捗表示（任意）
+      statusEl.textContent = `名詞を抽出中… (${Math.min(idx, chunks.length)}/${chunks.length})`;
+
+      if (idx < chunks.length) {
+        // 次バッチを非同期で実行して UI をブロックしない
+        setTimeout(processNextBatch, 0);
+      } else {
+        // 完了
+        displayNouns(nouns);
+        extractBtn.disabled = false;
+        copyBtn.disabled = nouns.length === 0;
+        statusEl.textContent = `抽出完了（${nouns.length} 件）`;
+      }
+    }
+
+    // 開始
+    processNextBatch();
+  });
+
+  function displayNouns(nouns) {
+    wordListEl.innerHTML = "";
+    if (!nouns || nouns.length === 0) {
+      wordListEl.textContent = "(名詞は見つかりませんでした)";
+      countEl.textContent = "";
+      return;
+    }
+    for (const w of nouns) {
+      const span = document.createElement("span");
+      span.className = "word";
+      span.textContent = w;
+      wordListEl.appendChild(span);
+    }
+    countEl.textContent = `抽出数: ${nouns.length}`;
+  }
+
+  // コピー機能
+  copyBtn.addEventListener("click", async () => {
+    const words = Array.from(wordListEl.querySelectorAll(".word")).map(el => el.textContent);
+    if (words.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(words.join("\n"));
+      statusEl.textContent = "コピーしました";
+      setTimeout(() => statusEl.textContent = kuromojiLoaded ? "辞書準備完了" : "辞書を読み込み中…", 1500);
+    } catch (e) {
+      console.error(e);
+      alert("コピーに失敗しました");
+    }
+  });
+
+  // キーボードで textarea の内容を直接解析できるようにする（任意）
+  apiTextEl.addEventListener("input", () => {
+    extractBtn.disabled = !apiTextEl.value.trim() || !kuromojiLoaded;
+  });
+  </script>
+</body>
+</html>

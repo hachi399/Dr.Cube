@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>発想サイト v2 (Idea Site)</title>
+<style> body{font-family:sans-serif;padding:16px;background:#fafafa} input,button{font-size:16px;padding:8px;margin:6px} </style>
+</head>
+<body>
+  <h2>発想サイト（v2 モック）</h2>
+  <div>
+    <label>検索・プロンプト: <input id="searchBar" placeholder="親サイトから自動入力されます"></label>
+    <button id="generate">発想を作る</button>
+  </div>
+  <div id="result" style="white-space:pre-wrap;margin-top:12px"></div>
+
+<script>
+function tokenizeText(text){ if(!text) return []; try{ return Array.from(text.matchAll(/[\p{L}\p{N}ー]+/gu)).map(m=>m[0]); }catch(e){ return text.split(/\s+/).filter(Boolean);} }
+
+function pickRandom(arr){ if(!arr||arr.length===0) return null; return arr[Math.floor(Math.random()*arr.length)]; }
+
+// 親から送られてきた最近のIndexedDBエントリを受け取り、searchBarに自動挿入
+window.addEventListener('message', (ev)=>{
+  const d = ev.data || {};
+  if (d.type === 'recentEntries' && Array.isArray(d.entries)){
+    const sb = document.getElementById('searchBar');
+    if(d.entries.length>0){ const last = d.entries[d.entries.length-1]; const hint = last.filename || (last.analysisText? last.analysisText.slice(0,80) : (last.payload && JSON.stringify(last.payload).slice(0,80))) || ''; sb.value = hint; }
+  }
+
+  // 親がプロセス要求を送ると、そこからランダムな単語を選んで連想を作る
+  if (d.type === 'processFromParent'){
+    const entries = d.entries || [];
+    const texts = [];
+    entries.forEach(e=>{ if(e.filename) texts.push(e.filename); if(e.analysisText) texts.push(e.analysisText); if(e.payload) texts.push(JSON.stringify(e.payload)); });
+    const big = texts.join('\n');
+    const tokens = tokenizeText(big);
+    const seed = pickRandom(tokens) || (document.getElementById('searchBar').value || '無題');
+    const associations = [seed + 'のA', seed + 'のB', seed + 'のC'];
+    const out = `発想結果（seed: ${seed}）:\n- ${associations.join('\n- ')}`;
+    document.getElementById('result').textContent = out;
+    // 親へ送信
+    parent.postMessage({ type:'result', action:'発想', cardId:d.cardId || null, payload:{ seed, associations, text: out } }, '*');
+  }
+});
+
+// ユーザー操作でも送信できる
+document.getElementById('generate').addEventListener('click', ()=>{
+  const q = document.getElementById('searchBar').value || '無題';
+  const associations = [q+'-アイデア1', q+'-アイデア2'];
+  const out = `手動発想（${q}）:\n- ${associations.join('\n- ')}`;
+  document.getElementById('result').textContent = out;
+  parent.postMessage({ type:'result', action:'発想', cardId:null, payload:{ seed:q, associations, text: out } }, '*');
+});
+
+// 起動時に親へ最近のエントリ要求
+parent.postMessage({ type:'requestRecent' }, '*');
+</script>
+</body>
+</html>

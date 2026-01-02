@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+
+<html xml:lang="ja" lang="ja" xmlns="http://www.w3.org/1999/xhtml"><head>
+<meta http-equiv="content-type" content="text/html; charset=utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="shortcut icon" type="image/vnd.microsoft.icon" href="/favicon.ico">
+<link rel="stylesheet" type="text/css" href="/styles/default.css">
+
+<link rel="stylesheet" type="text/css" href="../styles/default.css">
+<title>単語抽出ツール</title>
+
+<script async="" src="https://www.googletagmanager.com/gtag/js?id=G-2Z96L9EE8N"></script><script async="" src="https://www.google-analytics.com/analytics.js"></script><script type="text/javascript" src="/js/ga.js"></script>
+</head>
+<body>
+<div id="g-container">
+	<div id="g-header">
+		<div id="g-top">
+			<a href="https://so-zou.jp/">so-zou.jp</a>
+		</div>
+		<div id="g-category">
+			<div><a href="../../">テキスト処理ツール</a></div>
+		</div>
+	
+	</div>
+	<div id="g-body">
+		<div id="g-contents">
+		
+		<div id="beta">
+		<h1>単語抽出</h1>
+			<noscript><p class="error-message">このサービスをご利用いただくには、<a href="/web-app/support/javascript/">JavaScriptを有効にする</a>必要があります。</p></noscript>
+			<p class="accept-message">入力した情報はサーバーへ送信されますが、通信は暗号化されておりサーバーに保存されることもありません。</p>
+			<form id="text-form" action="">
+				<fieldset>
+					<fieldset>
+						<legend>解析対象の文章</legend>
+						<textarea name="text" rows="5"></textarea>
+					</fieldset>
+					<fieldset>
+						<legend>判定の基準とする文字の種類</legend>
+						<small>※変更不可</small>
+						<label><input type="radio" name="char-type" value="" checked="checked">すべて</label>
+						<label><input type="radio" name="char-type" value="" disabled="disabled">英数字 (半角)</label>
+						<label><input type="radio" name="char-type" value="" disabled="disabled">英数字 (全角)</label>
+						<label><input type="radio" name="char-type" value="" disabled="disabled">ひらがな</label>
+						<label><input type="radio" name="char-type" value="" disabled="disabled">カタカナ</label>
+						<label><input type="radio" name="char-type" value="" disabled="disabled">漢字</label>
+					</fieldset>
+					<div>
+						<input type="submit" value="解析">
+						<input type="reset" class="reset" value="リセット">
+						<span id="status"></span>
+					</div>
+				</fieldset>
+			</form>
+			<div id="result-box"><ol></ol></div>
+
+	
+		</div>
+		</div>
+		
+		</div>
+		
+	</div>
+	
+		
+<script type="text/javascript" src="/js/util.js"></script>
+<script type="text/javascript" src="js/default.js"></script>
+
+
+<script type="text/javascript" src="/js/default.js"></script>
+
+
+</body></html>

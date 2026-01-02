@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Image → Word Summary</title>
+  <style>
+    body { margin: 0; padding: 20px; font-family: sans-serif; background: #111; color: #fff; }
+    button { padding: 10px 20px; margin-top: 10px; border: none; border-radius: 6px; cursor: pointer; }
+    #preview { margin-top: 20px; max-width: 300px; border-radius: 8px; }
+    .item { background: #222; padding: 10px; margin-top: 10px; border-radius: 6px; word-break: break-word; }
+    .payload { font-size: 12px; color: #aaa; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <h2>Image → Summary Word</h2>
+  <input type="file" id="fileInput" accept="image/*" />
+  <button id="sendBtn">解析</button>
+  <img id="preview" />
+  <div id="output"></div>
+  <h3>Saved</h3>
+  <div id="savedList"></div>
+
+<script>
+const API_URL = "https://dr-cube-1.onrender.com/chat";
+let db;
+
+initDB();
+
+document.getElementById("fileInput").addEventListener("change", handleFile);
+document.getElementById("sendBtn").addEventListener("click", processImage);
+
+function initDB() {
+  const req = indexedDB.open("imgWordsDB", 2); // ✅ バージョンを上げて payload を保存できるように
+  req.onupgradeneeded = e => {
+    const db = e.target.result;
+    if (!db.objectStoreNames.contains("items")) {
+      db.createObjectStore("items", { keyPath: "id", autoIncrement: true });
+    } else {
+      // 既存ストアに新しいフィールドを追加する必要はない（JSオブジェクトなので自由）
+    }
+  };
+  req.onsuccess = e => { db = e.target.result; loadSaved(); };
+}
+
+function handleFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => document.getElementById("preview").src = ev.target.result;
+  reader.readAsDataURL(file);
+}
+
+async function processImage() {
+  const img = document.getElementById("preview").src;
+  if (!img) return;
+  const prompt = "以下の画像から読み取れる単語のみ（複数）を出力してください。画像: " + img;
+
+  const payload = { prompt, image: img };
+
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) throw new Error("API Error: " + res.status);
+
+    const data = await res.json();
+    const word = data?.reply?.trim() || "(no result)";
+
+    document.getElementById("output").innerText = "結果: " + word;
+    saveItem(img, word, payload); // ✅ payload も保存
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function saveItem(image, word, payload) {
+  const tx = db.transaction("items", "readwrite");
+  tx.objectStore("items").add({ image, word, payload, time: Date.now() });
+  tx.oncomplete = loadSaved;
+}
+
+function loadSaved() {
+  const tx = db.transaction("items", "readonly");
+  const store = tx.objectStore("items");
+  const req = store.getAll();
+
+  req.onsuccess = () => {
+    const list = document.getElementById("savedList");
+    list.innerHTML = "";
+    req.result.forEach(item => {
+      const div = document.createElement("div");
+      div.className = "item";
+      div.innerHTML = `
+        <img src="${item.image}" style="width:80px;border-radius:6px;"> 
+        <b>${item.word}</b><br>
+        <span class="payload">Payload: ${JSON.stringify(item.payload)}</span><br>
+        <span class="payload">Time: ${new Date(item.time).toLocaleString()}</span>
+      `;
+      list.appendChild(div);
+      function saveItem(image, word, payload) {
+  const tx = db.transaction("items", "readwrite");
+  tx.objectStore("items").add({ image, word, payload, time: Date.now() });
+
+  tx.oncomplete = () => {
+    // ✅ 保存完了を他タブへ通知
+    const bc = new BroadcastChannel("db-updates");
+    bc.postMessage("updated");
+    bc.close();
+
+    loadSaved();
+  };
+}
+    });
+
+  };
+}
+</script>
+</body>
+</html>

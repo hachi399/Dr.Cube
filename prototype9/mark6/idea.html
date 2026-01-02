@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>indexedDB 加算保存テスト</title>
+</head>
+<body>
+  <script>
+    const DB_NAME = "SampleDB";
+    const DB_VERSION = 1;
+    const STORE_NAME = "numbers";
+
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    // 最初に一度だけ呼ばれる（DB新規 or バージョンアップ時）
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      // 既にあれば作らない
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: "id" });
+      }
+    };
+
+    request.onsuccess = (event) => {
+      const db = event.target.result;
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+
+      const getReq = store.get(1);
+
+      getReq.onsuccess = () => {
+        let currentValue = 0;
+
+        if (getReq.result) {
+          currentValue = getReq.result.value;
+        }
+
+        const newValue = currentValue - 100;
+
+        store.put({ id: 1, value: newValue });
+
+        console.log("前の値:", currentValue, " → 新しい値:", newValue);
+      };
+
+      getReq.onerror = (event) => {
+        console.error("取得エラー:", event.target.error);
+      };
+
+      tx.oncomplete = () => {
+        db.close();
+      };
+    };
+
+    request.onerror = (event) => {
+      console.error("DB エラー:", event.target.error);
+    };
+  </script>
+</body>
+</html>

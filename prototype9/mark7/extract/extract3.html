@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>熟語抽出 with IndexedDB</title>
+  <style>
+    body { margin: 0; padding: 20px; font-family: sans-serif; background:#111; color:#fff; }
+    textarea { width:100%; height:120px; background:#222; color:#fff; border:1px solid #333; padding:8px; border-radius:6px; }
+    button { padding:8px 12px; margin:6px 6px 6px 0; border-radius:6px; border:none; cursor:pointer; background:#0a84ff; color:#fff; }
+    .muted { background:#444; color:#ddd; }
+    .list { margin-top:16px; }
+    .item { background:#1b1b1b; padding:12px; margin-bottom:10px; border-radius:8px; }
+    .meta { font-size:12px; color:#aaa; margin-bottom:8px; }
+    pre { background:#0f0f0f; padding:10px; border-radius:6px; color:#dcdcdc; overflow:auto; }
+  </style>
+</head>
+<body>
+  <h2>文章を保存して熟語抽出</h2>
+
+  <label for="inputText"><strong>文章入力</strong></label>
+  <textarea id="inputText" placeholder="ここに文章を入力してください"></textarea>
+  <div>
+    <button id="saveBtn">保存</button>
+    <button id="clearAllBtn" class="muted">全削除</button>
+    <button id="sendAllBtn" class="muted">保存済みを一括抽出</button>
+  </div>
+
+  <h3>保存済みの文章</h3>
+  <div id="list" class="list"></div>
+
+  <script>
+    // サーバーのエンドポイント（フロントに API キーを置かない前提）
+    const API_URL = "https://dr-cube-1.onrender.com/chat";
+
+    // IndexedDB 設定
+    const DB_NAME = "jukugoDB";
+    const STORE_NAME = "texts";
+    let db;
+
+    // DB を開く（存在しなければ作成）
+    function openDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = (e) => {
+          db = e.target.result;
+          if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME, { keyPath: "id", autoIncrement: true });
+          }
+        };
+        req.onsuccess = (e) => { db = e.target.result; resolve(db); };
+        req.onerror = (e) => reject(e);
+      });
+    }
+
+    // テキストを保存
+    function addText(text) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readwrite");
+        const store = tx.objectStore(STORE_NAME);
+        const item = { text, created: Date.now(), extracted: false, result: null };
+        const req = store.add(item);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = (e) => reject(e);
+      });
+    }
+
+    // 全件取得
+    function getAllTexts() {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readonly");
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = (e) => reject(e);
+      });
+    }
+
+    // レコード更新（result と extracted を保存）
+    function updateRecord(record) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readwrite");
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.put(record);
+        req.onsuccess = () => resolve();
+        req.onerror = (e) => reject(e);
+      });
+    }
+
+    // レコード削除
+    function deleteRecord(id) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readwrite");
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.delete(id);
+        req.onsuccess = () => resolve();
+        req.onerror = (e) => reject(e);
+      });
+    }
+
+    // UI を再描画
+    async function renderList() {
+      const container = document.getElementById("list");
+      container.innerHTML = "";
+      const items = await getAllTexts();
+      if (!items.length) {
+        container.innerHTML = "<div class='muted'>保存された文章はありません。</div>";
+        return;
+      }
+      items.sort((a,b)=>b.created - a.created);
+      items.forEach(item => {
+        const div = document.createElement("div");
+        div.className = "item";
+        const date = new Date(item.created).toLocaleString();
+        div.innerHTML = `
+          <div class="meta">ID: ${item.id} ・ 保存日時: ${date}</div>
+          <div style="white-space:pre-wrap; margin-bottom:8px;">${escapeHtml(item.text)}</div>
+          <div style="margin-bottom:8px;">
+            <button data-action="send" data-id="${item.id}">抽出して送信</button>
+            <button data-action="delete" data-id="${item.id}" class="muted">削除</button>
+            <button data-action="show" data-id="${item.id}" class="muted">結果表示</button>
+          </div>
+          <div id="result-${item.id}">
+            ${item.extracted ? `<strong>抽出結果</strong><pre>${escapeHtml(JSON.stringify(item.result, null, 2))}</pre>` : ""}
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    // HTML エスケープ
+    function escapeHtml(s) {
+      if (!s) return "";
+      return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    }
+
+    // サーバーに投げる共通関数（フロントに API キーは置かない）
+    async function callServer(prompt) {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt })
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(()=>"");
+        throw new Error(`Server Error ${res.status} ${text}`);
+      }
+      const data = await res.json();
+      // サーバーは { reply: "..." } を返す想定
+      return data.reply;
+    }
+
+    // 単一レコードを抽出処理にかける
+    async function extractForRecord(id) {
+      try {
+        // まずレコードを取得
+        const tx = db.transaction(STORE_NAME, "readonly");
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.get(id);
+        const record = await new Promise((resolve, reject) => {
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = (e) => reject(e);
+        });
+        if (!record) throw new Error("レコードが見つかりません");
+        console.log(record.text);
+
+        // プロンプトを組み立てる（熟語抽出用）
+const prompt = `
+あなたは日本語テキストを処理するプログラムです。
+会話・挨拶・説明・前置き・後書きは禁止です。
+
+【タスク】
+入力された文章から「2文字以上の漢字のみで構成された熟語」を抽出してください。
+
+【厳格な出力ルール】
+- 出力は JSON 配列のみ
+- 文字列はすべて漢字のみ
+- 2文字未満は禁止
+- 配列以外の出力は禁止
+- コメント・説明文・挨拶は禁止
+
+【正しい出力例】
+["人工知能","情報処理","高速化"]
+
+【間違った出力例（禁止）】
+こんにちは
+以下が結果です
+["こんにちは"]
+{"result": [...]}
+
+【入力文章】
+${record.text}
+`;
+
+        // サーバーに投げる
+        const reply = await callServer(prompt);
+
+        // サーバーの reply が JSON 文字列ならパースして保存
+        let parsed = null;
+        try { parsed = JSON.parse(reply); } catch { parsed = reply; }
+
+        record.extracted = true;
+        record.result = parsed;
+        await updateRecord(record);
+
+        await renderList();
+        return record;
+      } catch (err) {
+        console.error(err);
+        alert("抽出エラー: " + err.message);
+        throw err;
+      }
+    }
+
+    // 一括抽出
+    async function extractAll() {
+      const items = await getAllTexts();
+      for (const it of items) {
+        try {
+          await extractForRecord(it.id);
+        } catch (e) {
+          // 個別エラーはログに留めて続行
+          console.warn("failed for id", it.id, e);
+        }
+      }
+      alert("一括抽出が完了しました");
+    }
+
+    // 初期化とイベントバインド
+    (async function init() {
+      await openDB();
+      await renderList();
+
+      document.getElementById("saveBtn").addEventListener("click", async () => {
+        const text = document.getElementById("inputText").value.trim();
+        if (!text) { alert("文章を入力してください"); return; }
+        await addText(text);
+        document.getElementById("inputText").value = "";
+        await renderList();
+      });
+
+      document.getElementById("clearAllBtn").addEventListener("click", async () => {
+        if (!confirm("保存された全ての文章を削除しますか？")) return;
+        const items = await getAllTexts();
+        for (const it of items) {
+          await deleteRecord(it.id);
+        }
+        await renderList();
+      });
+
+      document.getElementById("sendAllBtn").addEventListener("click", async () => {
+        if (!confirm("保存済みの全文章を順に抽出します。よろしいですか？")) return;
+        await extractAll();
+      });
+
+      // リスト内のボタンをイベントデリゲーションで処理
+      document.getElementById("list").addEventListener("click", async (e) => {
+        const btn = e.target.closest("button");
+        if (!btn) return;
+        const action = btn.dataset.action;
+        const id = Number(btn.dataset.id);
+        if (action === "send") {
+          btn.disabled = true;
+          btn.textContent = "処理中...";
+          try {
+            await extractForRecord(id);
+          } finally {
+            btn.disabled = false;
+            btn.textContent = "抽出して送信";
+          }
+        } else if (action === "delete") {
+          if (!confirm("この文章を削除しますか？")) return;
+          await deleteRecord(id);
+          await renderList();
+        } else if (action === "show") {
+          // 結果表示は既にリスト内にあるが、ここではトグル表示を行う
+          const resultDiv = document.getElementById(`result-${id}`);
+          if (resultDiv) {
+            resultDiv.style.display = resultDiv.style.display === "none" ? "block" : "none";
+          }
+        }
+      });
+    })();
+    async function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open("jukugoDB", 1);
+    req.onupgradeneeded = (e) => {
+      db = e.target.result;
+      if (!db.objectStoreNames.contains("texts")) {
+        db.createObjectStore("texts", { keyPath: "id", autoIncrement: true });
+      }
+    };
+    req.onsuccess = (e) => { db = e.target.result; resolve(db); };
+    req.onerror = (e) => reject(e);
+  });
+}
+
+(async function init() {
+  await openDB();   // ← 必ず最初に呼ぶ
+  await renderList();
+})();
+
+const arr = JSON.parse(json);
+
+
+  </script>
+</body>
+</html>

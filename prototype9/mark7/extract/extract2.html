@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>熟語抽出デモ</title>
+</head>
+<body>
+  <h1>文章から熟語抽出</h1>
+  <textarea id="inputText" rows="6" cols="60" placeholder="ここに文章を入力してください"></textarea><br>
+  <button id="extractBtn">熟語を抽出</button>
+
+  <h2>抽出結果</h2>
+  <pre id="result"></pre>
+
+  <script>
+    const API_KEY = "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"; // ← OpenAIのAPIキーを入れてください
+
+    document.getElementById("extractBtn").addEventListener("click", async () => {
+      const text = document.getElementById("inputText").value;
+
+      const messages = [
+        { role: "system", content: "あなたは日本語の言語処理に詳しいアシスタントです。" },
+        { role: "user", content: `以下の文章から熟語（2字以上の漢字のまとまり）だけを抽出し、JSON配列で返してください。\n\n文章: ${text}` }
+      ];
+
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${API_KEY}`
+        },
+        body: JSON.stringify({
+          model: "gpt-4.1-mini",
+          messages: messages,
+          temperature: 0
+        })
+      });
+
+      const data = await response.json();
+      const result = data.choices[0].message.content;
+      document.getElementById("result").textContent = result;
+    });
+  </script>
+</body>
+</html>

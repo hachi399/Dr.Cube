@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<body style="font-family:sans-serif;padding:20px">
+<h2>Analysis Viewer</h2>
+<pre id="log">waiting...</pre>
+
+<script>
+const log = document.getElementById('log');
+
+window.addEventListener('message', e=>{
+  if(e.origin !== location.origin) return;
+  const { type, payload } = e.data || {};
+
+  if(type === 'DB_UPDATE'){
+    log.textContent =
+      '【新しい解析結果】\\n' +
+      JSON.stringify(payload, null, 2);
+  }
+});
+</script>
+</body>
+</html>

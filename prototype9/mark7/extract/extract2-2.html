@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>熟語抽出デモ</title>
+</head>
+<body>
+  <h1>文章から熟語抽出</h1>
+  <textarea id="inputText" rows="6" cols="60" placeholder="ここに文章を入力してください"></textarea><br>
+  <button id="extractBtn">熟語を抽出</button>
+
+  <h2>抽出結果</h2>
+  <pre id="result"></pre>
+
+  <script>
+    const API_URL = "https://dr-cube-1.onrender.com/chat";
+
+    document.getElementById("extractBtn").addEventListener("click", async () => {
+      const text = document.getElementById("inputText").value;
+      const resultEl = document.getElementById("result");
+
+      // 入力値の確認
+      console.log("input text:", text);
+
+      if (!text.trim()) {
+        resultEl.textContent = "文章を入力してください。";
+        return;
+      }
+
+      resultEl.textContent = "処理中...";
+
+      try {
+        // ここで API に渡すプロンプトを「絶対にテキスト入り」で作る
+        const prompt = `以下の文章から日本語の熟語のみを抽出してください。\n` +
+                       `文章:\n${text}\n\n` +
+                       `出力は「熟語一覧: ...」のように日本語でお願いします。`;
+
+        console.log("sending prompt:", prompt);
+
+        const payload = {
+          prompt: prompt
+        };
+
+        const response = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        // HTTP エラー確認
+        if (!response.ok) {
+          const errText = await response.text();
+          console.error("HTTP error:", response.status, errText);
+          resultEl.textContent =
+            `HTTPエラー: ${response.status}\n` +
+            `レスポンス本文:\n${errText}`;
+          return;
+        }
+
+        const data = await response.json();
+        console.log("API response (JSON):", data);
+
+        // ① あなたの Render API 独自形式（reply フィールド）想定
+        if (data.reply) {
+          resultEl.textContent = data.reply.trim();
+          return;
+        }
+
+        // ② 万一 OpenAI 互換っぽい形式だった場合の保険
+        if (data.choices && data.choices.length > 0) {
+          const content = data.choices[0].message?.content ?? "";
+          resultEl.textContent = content || "内容が空です。";
+          return;
+        }
+
+        // ③ どちらでもない場合は、生の JSON を表示して調査
+        resultEl.textContent =
+          "想定外のレスポンス形式です:\n" +
+          JSON.stringify(data, null, 2);
+
+      } catch (error) {
+        console.error("fetch error:", error);
+        resultEl.textContent = "エラーが発生しました: " + error;
+      }
+    });
+  </script>
+</body>
+</html>

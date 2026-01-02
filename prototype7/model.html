@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Inner Swipe Card Generator</title>
+
+<style>
+  body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #222;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    color: white;
+    user-select: none;
+  }
+
+  #container {
+    display: flex;
+    gap: 20px;
+    overflow-x: auto;
+    width: 100vw;
+    padding: 20px;
+    scroll-behavior: smooth;
+  }
+
+  .card {
+    min-width: 150px;
+    height: 200px;
+    border-radius: 15px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    font-size: 32px;
+    color: white;
+    flex-shrink: 0;
+  }
+
+  .card-type { font-size: 28px; font-weight: bold; }
+  .card-num { font-size: 18px; opacity: 0.8; }
+
+  /* カードタイプごとの色分け */
+  .card-0 { background: linear-gradient(135deg, #555 0%, #333 100%); }
+  .card-発想 { background: linear-gradient(135deg, #1e90ff 0%, #1873cc 100%); }
+  .card-深堀り { background: linear-gradient(135deg, #ff6347 0%, #e53728 100%); }
+</style>
+</head>
+<body>
+
+<div id="container">
+  <div id="centerCard" class="card card-0">
+    <div class="card-type">画像</div>
+  </div>
+</div>
+
+<script>
+const container = document.getElementById("container");
+const centerCard = document.getElementById("centerCard");
+
+// 通し番号
+let globalCount = 0;
+
+// スワイプ判定
+let startX = 0;
+
+// カード追加（内側へ挿入）
+function addCardInner(type, toRight) {
+  globalCount++;
+
+  const card = document.createElement("div");
+  card.className = `card card-${type}`;
+  card.innerHTML = `
+    <div class="card-type">${type}</div>
+    <div class="card-num">#${globalCount}</div>
+  `;
+
+  if (toRight) {
+    // 0カードの右隣に挿入
+    container.insertBefore(card, centerCard.nextSibling);
+  } else {
+    // 0カードの左隣に挿入
+    container.insertBefore(card, centerCard);
+  }
+}
+
+// スマホ用
+container.addEventListener("touchstart", e => {
+  startX = e.touches[0].clientX;
+});
+
+container.addEventListener("touchend", e => {
+  let endX = e.changedTouches[0].clientX;
+  handleSwipe(endX - startX);
+});
+
+// PC用
+container.addEventListener("mousedown", e => {
+  startX = e.clientX;
+});
+window.addEventListener("mouseup", e => {
+  let endX = e.clientX;
+  handleSwipe(endX - startX);
+});
+
+// スワイプ判定
+function handleSwipe(dist) {
+  if (Math.abs(dist) < 30) return;
+
+  if (dist < 0) {
+    // →スワイプ
+    addCardInner("発想", true);
+  } else {
+    // ←スワイプ
+    addCardInner("深堀り", false);
+  }
+}
+</script>
+
+</body>
+</html>

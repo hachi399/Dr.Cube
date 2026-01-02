@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>文章解説アプリ</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 24px;
+      background: #f5f5f5;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    textarea {
+      width: 100%;
+      min-height: 160px;
+      padding: 10px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      font-size: 0.95rem;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+    button {
+      margin-top: 12px;
+      padding: 10px 16px;
+      font-size: 0.95rem;
+      border-radius: 4px;
+      border: none;
+      background: #2563eb;
+      color: #fff;
+      cursor: pointer;
+    }
+    button:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+    .output {
+      margin-top: 20px;
+      padding: 12px;
+      border-radius: 4px;
+      background: #f3f4f6;
+      min-height: 80px;
+      white-space: pre-wrap;
+      line-height: 1.6;
+      font-size: 0.95rem;
+    }
+    .error {
+      color: #b91c1c;
+      margin-top: 8px;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>文章をやさしく解説してくれるツール</h1>
+
+    <label class="label" for="inputText">解説してほしい文章：</label>
+    <textarea id="inputText" placeholder="ここに文章を入力してください"></textarea>
+
+    <button id="explainButton">解説してもらう</button>
+    <div id="error" class="error"></div>
+
+    <div class="label" style="margin-top: 20px;">解説結果：</div>
+    <div id="output" class="output"></div>
+  </div>
+
+  <script>
+    const API_URL = "https://dr-cube-1.onrender.com/chat";
+
+    const explainButton = document.getElementById("explainButton");
+    const inputText = document.getElementById("inputText");
+    const output = document.getElementById("output");
+    const errorBox = document.getElementById("error");
+
+    explainButton.addEventListener("click", async () => {
+      const text = inputText.value.trim();
+      if (!text) {
+        errorBox.textContent = "文章を入力してください。";
+        return;
+      }
+
+      errorBox.textContent = "";
+      explainButton.disabled = true;
+      explainButton.textContent = "解説中...";
+
+      try {
+        const response = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text })
+        });
+
+        if (!response.ok) {
+          throw new Error("サーバー側でエラーが発生しました");
+        }
+
+        const data = await response.json();
+        output.textContent = data.reply ?? "解説を取得できませんでした。";
+
+      } catch (e) {
+        errorBox.textContent = "エラー: " + e.message;
+      } finally {
+        explainButton.disabled = false;
+        explainButton.textContent = "解説してもらう";
+      }
+    });
+  </script>
+</body>
+</html>

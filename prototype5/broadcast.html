@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>直感派生図（自由配置ブレインストーミング）</title>
+<style>
+  :root{
+    --bg:#071024; --panel:#0b1220; --accent:#60a5fa; --muted:#94a3b8;
+  }
+  html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,'Hiragino Kaku Gothic ProN',Meiryo,Arial}
+  body{background:linear-gradient(180deg,#071024 0%, #07122b 60%);color:#e6eef8}
+  .app{display:flex;height:100vh;gap:12px;padding:12px;box-sizing:border-box}
+  .panel{width:320px;background:linear-gradient(180deg, rgba(10,14,24,0.95), rgba(6,10,18,0.92));border-radius:12px;padding:14px;box-shadow:0 6px 24px rgba(2,6,23,0.6);overflow:auto}
+  .canvas{flex:1;background:linear-gradient(180deg,rgba(8,12,20,0.6),rgba(4,8,16,0.4));border-radius:12px;padding:10px;display:flex;flex-direction:column}
+  h1{font-size:18px;margin:0 0 10px 0}
+  label{display:block;font-size:13px;color:var(--muted);margin-top:10px}
+  input[type=text],textarea,select{
+    width:100%;padding:8px;margin-top:6px;border-radius:8px;border:1px solid rgba(3,16,40,0.12);background:#f8fafc;color:#031028;font-size:13px;box-sizing:border-box;
+  }
+  button{margin-top:8px;padding:8px 10px;border-radius:8px;border:0;background:var(--accent);color:#031028;cursor:pointer}
+  .muted{color:var(--muted);font-size:13px;margin-top:6px}
+  .controls{display:flex;gap:8px;flex-wrap:wrap}
+  .small{padding:6px 8px;font-size:13px;border-radius:8px}
+  svg{flex:1;width:100%;height:calc(100vh - 120px);background:transparent;touch-action: none}
+  .node rect{fill:#fff;stroke:#2b3140;stroke-width:1.2;rx:8;ry:8}
+  .node text{fill:#ffffff; font-size:13px; font-weight:600; pointer-events:none}
+
+  .link{fill:none;stroke:rgba(96,165,250,0.95);stroke-width:2.2}
+  .selected rect{stroke:gold;stroke-width:2}
+  .context{position:fixed;background:#061020;color:#e6eef8;border-radius:8px;padding:6px;box-shadow:0 6px 18px rgba(0,0,0,0.6);display:none;z-index:1000}
+  .context button{background:transparent;border:0;color:var(--muted);padding:6px 8px;display:block;text-align:left;width:100%;cursor:pointer}
+  .hint{font-size:12px;color:var(--muted);margin-top:10px}
+  .top-controls{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+</style>
+</head>
+<body>
+  <div class="app">
+    <div class="panel">
+      <h1>直感ブレインストーミング</h1>
+      <div class="muted">右クリックで追加・編集・削除。ダブルクリックでその場編集。ホイールでズーム、空白ドラッグでパン。</div>
+
+      <label>選択中ノード</label>
+      <input id="nodeLabel" type="text" placeholder="選択して編集" />
+
+      <div class="controls">
+        <button id="addChildBtn" class="small">子ノード追加</button>
+        <button id="deleteBtn" class="small">削除</button>
+        <button id="collapseBtn" class="small">折りたたむ/展開</button>
+        <button id="fitBtn" class="small">全体表示</button>
+      </div>
+
+      <label>保存 / 読込</label>
+      <div class="controls">
+        <button id="exportBtn" class="small">JSONダウンロード</button>
+        <input id="importFile" type="file" accept="application/json" />
+      </div>
+
+      <label>簡易JSON編集</label>
+      <textarea id="jsonText" rows="6" placeholder='ここにJSONを書いて「読み込む」を押します'></textarea>
+      <div class="controls">
+        <button id="loadBtn" class="small">読み込む</button>
+        <button id="resetBtn" class="small">初期に戻す</button>
+      </div>
+
+      <div class="hint">ショートカット: Escで選択解除。Ctrl/Cmd+Zは未実装（将来追加可）。</div>
+    </div>
+
+    <div class="canvas">
+      <div class="top-controls">
+        <div style="color:var(--muted);font-size:13px">ノード数: <span id="nodeCount">0</span></div>
+      </div>
+      <svg id="svg"></svg>
+    </div>
+  </div>
+
+  <div id="context" class="context" role="menu">
+    <button data-action="add-here">ここにノードを追加</button>
+    <button data-action="add-child">子ノード追加</button>
+    <button data-action="edit">ラベル編集</button>
+    <button data-action="collapse">折りたたむ/展開</button>
+    <button data-action="delete">削除</button>
+  </div>
+
+<script>
+(function(){
+  // ---------- データモデル ----------
+  let data = {
+    id: genId(), label: 'ルート', x: 300, y: 200, parent: null, collapsed:false
+  };
+  // Keep all nodes in a flat map for easy manipulation
+  let nodes = {};
+  nodes[data.id] = data;
+
+  // helper
+  function genId(){ return 'n_' + Math.random().toString(36).slice(2,9); }
+
+  // ---------- SVG 初期化 ----------
+  const svg = document.getElementById('svg');
+  const svgns = "http://www.w3.org/2000/svg";
+  const gLinks = document.createElementNS(svgns, 'g');
+  const gNodes = document.createElementNS(svgns, 'g');
+  svg.appendChild(gLinks);
+  svg.appendChild(gNodes);
+
+  // 状態
+  let selectedId = null;
+  let dragNode = null;
+  let isPanning = false;
+  let panStart = null;
+  let view = {x:0,y:0,k:1}; // pan/zoom
+
+  // context menu element
+  const context = document.getElementById('context');
+
+  // UI elements
+  const nodeLabelInput = document.getElementById('nodeLabel');
+  const nodeCountEl = document.getElementById('nodeCount');
+
+  // ---------- イベント：パン＆ズーム ----------
+  function applyView(){
+    gLinks.setAttribute('transform', `translate(${view.x},${view.y}) scale(${view.k})`);
+    gNodes.setAttribute('transform', `translate(${view.x},${view.y}) scale(${view.k})`);
+  }
+  applyView();
+
+  svg.addEventListener('wheel', (e)=>{
+    e.preventDefault();
+    const delta = -e.deltaY;
+    const zoomFactor = Math.exp(delta * 0.0012);
+    // zoom toward mouse
+    const rect = svg.getBoundingClientRect();
+    const mx = (e.clientX - rect.left - view.x) / view.k;
+    const my = (e.clientY - rect.top - view.y) / view.k;
+    view.k *= zoomFactor;
+    view.x = e.clientX - rect.left - mx * view.k;
+    view.y = e.clientY - rect.top - my * view.k;
+    applyView();
+  }, {passive:false});
+
+  // 空白ドラッグでパン（右ボタン or space? ここでは中ボタンまたは空白から判断）
+  let pointerDown = false;
+  let pointerMoved = false;
+  let pointerStart = null;
+  svg.addEventListener('pointerdown', (e)=>{
+    // ignore if clicked node (handled separately)
+    if(e.target.closest('.node-group')) return;
+    pointerDown = true; pointerMoved = false;
+    pointerStart = {x:e.clientX, y:e.clientY, viewX:view.x, viewY:view.y};
+    svg.setPointerCapture(e.pointerId);
+  });
+  svg.addEventListener('pointermove', (e)=>{
+    if(!pointerDown) return;
+    pointerMoved = true;
+    const dx = e.clientX - pointerStart.x;
+    const dy = e.clientY - pointerStart.y;
+    view.x = pointerStart.viewX + dx;
+    view.y = pointerStart.viewY + dy;
+    applyView();
+  });
+  svg.addEventListener('pointerup', (e)=>{
+    pointerDown = false;
+    svg.releasePointerCapture?.(e.pointerId);
+  });
+
+  // ---------- ノード描画 ----------
+  function render(){
+    // clear
+    while(gLinks.firstChild) gLinks.removeChild(gLinks.firstChild);
+    while(gNodes.firstChild) gNodes.removeChild(gNodes.firstChild);
+
+    // draw links first
+    Object.values(nodes).forEach(n=>{
+      if(n.parent && nodes[n.parent] && !nodes[n.parent].collapsed){
+        const p = nodes[n.parent];
+        const path = document.createElementNS(svgns,'path');
+        path.setAttribute('class','link');
+        const sx = p.x, sy = p.y, tx = n.x, ty = n.y;
+        const mx = (sx + tx) / 2;
+        path.setAttribute('d', `M ${sx} ${sy} C ${mx} ${sy} ${mx} ${ty} ${tx} ${ty}`);
+        gLinks.appendChild(path);
+      }
+    });
+
+    // draw nodes
+    Object.values(nodes).forEach(n=>{
+      const g = document.createElementNS(svgns,'g');
+      g.setAttribute('class','node-group');
+      g.setAttribute('data-id', n.id);
+      g.setAttribute('transform', `translate(${n.x},${n.y})`);
+      // background rect
+      const rect = document.createElementNS(svgns,'rect');
+      rect.setAttribute('rx',8); rect.setAttribute('ry',8);
+      rect.setAttribute('x', -8); rect.setAttribute('y', -14);
+      rect.setAttribute('width', 80); rect.setAttribute('height', 28);
+      // text
+      const text = document.createElementNS(svgns,'text');
+      text.setAttribute('text-anchor','middle');
+      text.setAttribute('dy','0.35em');
+      text.textContent = n.label;
+      // collapsed marker
+      const marker = document.createElementNS(svgns,'text');
+      marker.setAttribute('x', 40); marker.setAttribute('y', -10); marker.setAttribute('font-size',12);
+      marker.setAttribute('fill','#6b7280');
+      marker.textContent = n.collapsed ? '▸' : (hasChildren(n)? '▾' : '');
+
+      g.appendChild(rect);
+      g.appendChild(text);
+      g.appendChild(marker);
+
+      // style for selection
+      if(selectedId === n.id) rect.style.stroke = 'gold', rect.style.strokeWidth = '2';
+      // auto size rect based on text bbox
+      // add temporary to DOM to measure
+      gNodes.appendChild(g);
+      // measure (needs element in DOM)
+      const bbox = text.getBBox();
+      const paddingX = 16, paddingY = 10;
+      rect.setAttribute('x', - (bbox.width/2) - paddingX/2);
+      rect.setAttribute('y', - (bbox.height/2) - paddingY/2);
+      rect.setAttribute('width', bbox.width + paddingX);
+      rect.setAttribute('height', bbox.height + paddingY);
+
+      // pointer events
+      g.style.cursor = 'grab';
+      // event handlers
+      g.addEventListener('pointerdown', nodePointerDown);
+      g.addEventListener('dblclick', nodeDblClick);
+      g.addEventListener('contextmenu', nodeContext);
+    });
+
+    nodeCountEl.textContent = Object.keys(nodes).length;
+  }
+
+  function hasChildren(n){
+    return Object.values(nodes).some(c => c.parent === n.id);
+  }
+
+  // ---------- ノード操作ハンドラ ----------
+  function nodePointerDown(e){
+    e.stopPropagation();
+    const id = this.getAttribute('data-id');
+    // left button start drag
+    if(e.button === 0){
+      dragNode = {id, startX: e.clientX, startY: e.clientY, origX: nodes[id].x, origY: nodes[id].y};
+      this.setPointerCapture?.(e.pointerId);
+      this.style.cursor = 'grabbing';
+      document.addEventListener('pointermove', nodePointerMove);
+      document.addEventListener('pointerup', nodePointerUp, {once:true});
+      selectNode(id);
+    }
+  }
+  function nodePointerMove(e){
+    if(!dragNode) return;
+    const dx = (e.clientX - dragNode.startX) / view.k;
+    const dy = (e.clientY - dragNode.startY) / view.k;
+    nodes[dragNode.id].x = dragNode.origX + dx;
+    nodes[dragNode.id].y = dragNode.origY + dy;
+    render();
+  }
+  function nodePointerUp(e){
+    dragNode = null;
+    document.removeEventListener('pointermove', nodePointerMove);
+  }
+
+  function selectNode(id){
+    selectedId = id;
+    nodeLabelInput.value = nodes[id].label || '';
+    render();
+  }
+
+  nodeLabelInput.addEventListener('input', (e)=>{
+    if(selectedId){ nodes[selectedId].label = e.target.value; render(); }
+  });
+
+  document.addEventListener('keydown', (e)=>{
+    if(e.key === 'Escape'){ selectedId = null; nodeLabelInput.value=''; render(); }
+  });
+
+  // ---------- ダブルクリックでインライン編集 ----------
+  function nodeDblClick(e){
+    e.stopPropagation();
+    const g = this;
+    const id = g.getAttribute('data-id');
+    const n = nodes[id];
+    // create foreignObject with input
+    const fo = document.createElementNS(svgns, 'foreignObject');
+    fo.setAttribute('x', n.x - 150);
+    fo.setAttribute('y', n.y - 20);
+    fo.setAttribute('width', 300);
+    fo.setAttribute('height', 40);
+    const div = document.createElement('div');
+    div.style.background = 'transparent';
+    const input = document.createElement('input');
+    input.type='text'; input.value = n.label;
+    input.style.fontSize='14px'; input.style.padding='6px'; input.style.borderRadius='6px';
+    div.appendChild(input);
+    fo.appendChild(div);
+    svg.appendChild(fo);
+    input.focus();
+    input.select();
+
+    function finish(){
+      n.label = input.value;
+      svg.removeChild(fo);
+      render();
+    }
+    input.addEventListener('blur', finish);
+    input.addEventListener('keydown', (ev)=>{ if(ev.key==='Enter'){ finish(); } if(ev.key==='Escape'){ svg.removeChild(fo); render(); }});
+  }
+
+  // ---------- 右クリックコンテキストメニュー ----------
+  function nodeContext(e){
+    e.preventDefault(); e.stopPropagation();
+    const g = this;
+    const id = g.getAttribute('data-id');
+    showContextMenu(e.clientX, e.clientY, id);
+  }
+
+  svg.addEventListener('contextmenu', (e)=>{
+    // right-click on empty space
+    if(e.target.closest('.node-group')) return;
+    e.preventDefault();
+    showContextMenu(e.clientX, e.clientY, null);
+  });
+
+  function showContextMenu(cx, cy, nodeId){
+    context.style.left = cx + 'px';
+    context.style.top = cy + 'px';
+    context.style.display = 'block';
+    context.dataset.node = nodeId || '';
+  }
+  document.addEventListener('click', ()=>{ context.style.display = 'none'; });
+
+  context.addEventListener('click', (e)=>{
+    const action = e.target.getAttribute('data-action');
+    if(!action) return;
+    const nodeId = context.dataset.node || null;
+    if(action === 'add-here'){
+      const svgRect = svg.getBoundingClientRect();
+      const x = (parseFloat(context.style.left) - svgRect.left - view.x) / view.k;
+      const y = (parseFloat(context.style.top) - svgRect.top - view.y) / view.k;
+      const id = genId();
+      nodes[id] = {id, label:'新しいノード', x, y, parent: null, collapsed:false};
+      selectNode(id);
+      render();
+    } else if(action === 'add-child'){
+      const parentId = nodeId || selectedId;
+      if(!parentId){ alert('親ノードを選択してください'); return; }
+      const p = nodes[parentId];
+      const id = genId();
+      nodes[id] = {id, label:'子ノード', x: p.x + 120, y: p.y + 20, parent: parentId, collapsed:false};
+      selectNode(id); render();
+    } else if(action === 'edit'){
+      const id = nodeId || selectedId;
+      if(!id) { alert('ノードを選択してください'); return; }
+      selectNode(id);
+      // trigger dblclick inline edit
+      const nodeEl = gNodes.querySelector(`[data-id="${id}"]`);
+      nodeEl && nodeDblClick.call(nodeEl, new Event('dblclick'));
+    } else if(action === 'collapse'){
+      const id = nodeId || selectedId;
+      if(!id) { alert('ノードを選択してください'); return; }
+      nodes[id].collapsed = !nodes[id].collapsed;
+      render();
+    } else if(action === 'delete'){
+      const id = nodeId || selectedId;
+      if(!id) { alert('ノードを選択してください'); return; }
+      if(nodes[id].parent === null){
+        if(!confirm('ルートを削除しますか？（子ノードはルートになります）')) return;
+      }
+      // reparent children to parent or null
+      Object.values(nodes).forEach(n => { if(n.parent === id) n.parent = nodes[id].parent || null; });
+      delete nodes[id];
+      selectedId = null;
+      nodeLabelInput.value = '';
+      render();
+    }
+    context.style.display = 'none';
+  });
+
+  // ---------- パネル操作 ----------
+  document.getElementById('addChildBtn').addEventListener('click', ()=>{
+    const parentId = selectedId;
+    if(!parentId){ alert('まずノードを選んでください'); return; }
+    const p = nodes[parentId];
+    const id = genId();
+    nodes[id] = {id, label:'子ノード', x: p.x + 120, y: p.y + 20, parent: parentId, collapsed:false};
+    selectNode(id); render();
+  });
+
+  document.getElementById('deleteBtn').addEventListener('click', ()=>{
+    if(!selectedId){ alert('まずノードを選んでください'); return; }
+    if(nodes[selectedId].parent === null){
+      if(!confirm('ルートを削除しますか？（子ノードはルートになります）')) return;
+    }
+    Object.values(nodes).forEach(n => { if(n.parent === selectedId) n.parent = nodes[selectedId].parent || null; });
+    delete nodes[selectedId]; selectedId = null; nodeLabelInput.value=''; render();
+  });
+
+  document.getElementById('collapseBtn').addEventListener('click', ()=>{
+    if(!selectedId){ alert('まずノードを選んでください'); return; }
+    nodes[selectedId].collapsed = !nodes[selectedId].collapsed; render();
+  });
+
+  // Fit: compute bbox and set view to include everything
+  document.getElementById('fitBtn').addEventListener('click', ()=>{
+    const all = Object.values(nodes);
+    if(all.length===0) return;
+    const minX = Math.min(...all.map(n=>n.x));
+    const maxX = Math.max(...all.map(n=>n.x));
+    const minY = Math.min(...all.map(n=>n.y));
+    const maxY = Math.max(...all.map(n=>n.y));
+    const rect = svg.getBoundingClientRect();
+    const margin = 80;
+    const w = maxX - minX + margin*2;
+    const h = maxY - minY + margin*2;
+    const k = Math.min(rect.width / w, rect.height / h);
+    view.k = Math.max(0.2, Math.min(3, k));
+    view.x = rect.width/2 - (minX + maxX)/2 * view.k;
+    view.y = rect.height/2 - (minY + maxY)/2 * view.k;
+    applyView();
+  });
+
+  // ---------- JSON Export/Import ----------
+  function exportJson(){
+    const payload = { nodes: Object.values(nodes) };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'brainstorm.json'; a.click(); URL.revokeObjectURL(url);
+  }
+  document.getElementById('exportBtn').addEventListener('click', exportJson);
+
+  document.getElementById('importFile').addEventListener('change', (e)=>{
+    const f = e.target.files[0]; if(!f) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{ try{
+      const parsed = JSON.parse(reader.result);
+      if(Array.isArray(parsed.nodes)){
+        nodes = {};
+        parsed.nodes.forEach(n => nodes[n.id || genId()] = {id: n.id || genId(), label: n.label || '無題', x: n.x || 100, y: n.y || 100, parent: n.parent || null, collapsed: !!n.collapsed});
+        // ensure there is at least one node
+        if(Object.keys(nodes).length===0) { const id=genId(); nodes[id] = {id,label:'ルート',x:200,y:200,parent:null,collapsed:false}; }
+        selectedId = null;
+        document.getElementById('jsonText').value = JSON.stringify({nodes:Object.values(nodes)},null,2);
+        render();
+      } else { alert('無効なデータ形式です'); }
+    }catch(err){ alert('JSONの解析に失敗しました'); } };
+    reader.readAsText(f);
+  });
+
+  document.getElementById('loadBtn').addEventListener('click', ()=>{
+    try{
+      const parsed = JSON.parse(document.getElementById('jsonText').value);
+      if(Array.isArray(parsed.nodes)){
+        nodes = {};
+        parsed.nodes.forEach(n => nodes[n.id || genId()] = {id: n.id || genId(), label: n.label || '無題', x: n.x || 100, y: n.y || 100, parent: n.parent || null, collapsed: !!n.collapsed});
+        selectedId = null;
+        render();
+      } else { alert('nodes配列が必要です (例: { "nodes":[ ... ] })'); }
+    }catch(e){ alert('無効なJSONです'); }
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', ()=>{
+    if(!confirm('初期状態に戻しますか？')) return;
+    nodes = {};
+    const root = {id:genId(), label:'ルート', x:300,y:200, parent:null, collapsed:false};
+    const a = {id:genId(), label:'アイデアA', x:450,y:180, parent:root.id, collapsed:false};
+    const b = {id:genId(), label:'アイデアB', x:450,y:240, parent:root.id, collapsed:false};
+    nodes[root.id]=root; nodes[a.id]=a; nodes[b.id]=b;
+    selectedId = null;
+    document.getElementById('jsonText').value = JSON.stringify({nodes:Object.values(nodes)},null,2);
+    render();
+  });
+
+  // ---------- 初期データ & 初期レンダリング ----------
+  (function seed(){
+    nodes = {};
+    const root = {id:genId(), label:'ルート', x:300,y:200, parent:null, collapsed:false};
+    const a = {id:genId(), label:'ブランチA', x:520,y:140, parent:root.id, collapsed:false};
+    const b = {id:genId(), label:'ブランチB', x:520,y:260, parent:root.id, collapsed:false};
+    const a1 = {id:genId(), label:'A1', x:720,y:120, parent:a.id, collapsed:false};
+    nodes[root.id]=root; nodes[a.id]=a; nodes[b.id]=b; nodes[a1.id]=a1;
+    document.getElementById('jsonText').value = JSON.stringify({nodes:Object.values(nodes)},null,2);
+    render();
+  })();
+
+  // expose for debugging (optional)
+  window._brain = {nodes, render, exportJson};
+})();
+</script>
+</body>
+</html>
+

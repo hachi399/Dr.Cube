@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>文章解説アプリ（ChatGPT API）</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 24px;
+      background: #f5f5f5;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      margin-bottom: 16px;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 160px;
+      padding: 10px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      font-size: 0.95rem;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+
+    button {
+      margin-top: 12px;
+      padding: 10px 16px;
+      font-size: 0.95rem;
+      border-radius: 4px;
+      border: none;
+      background: #2563eb;
+      color: #fff;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+
+    .label {
+      font-weight: bold;
+      margin-bottom: 6px;
+      display: block;
+    }
+
+    .output {
+      margin-top: 20px;
+      padding: 12px;
+      border-radius: 4px;
+      background: #f3f4f6;
+      min-height: 80px;
+      white-space: pre-wrap;
+      line-height: 1.6;
+      font-size: 0.95rem;
+    }
+
+    .error {
+      color: #b91c1c;
+      margin-top: 8px;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>文章をやさしく解説してくれるツール</h1>
+
+    <label class="label" for="inputText">解説してほしい文章：</label>
+    <textarea id="inputText" placeholder="ここに文章を入力してください"></textarea>
+
+    <!-- 本番運用ではこの入力欄ではなく、サーバー側環境変数を使うことを推奨 -->
+    <label class="label" for="apiKey">OpenAI APIキー（デモ用・フロント埋め込みは非推奨）：</label>
+    <input id="apiKey" type="password" style="width:100%; padding:8px; box-sizing:border-box;" />
+
+    <button id="explainButton">解説してもらう</button>
+    <div id="error" class="error"></div>
+
+    <div class="label" style="margin-top: 20px;">解説結果：</div>
+    <div id="output" class="output"></div>
+  </div>
+
+  <script>
+    const explainButton = document.getElementById("explainButton");
+    const inputText = document.getElementById("inputText");
+    const output = document.getElementById("output");
+    const errorBox = document.getElementById("error");
+    const apiKeyInput = document.getElementById("apiKey");
+
+    explainButton.addEventListener("click", async () => {
+      const text = inputText.value.trim();
+      const apiKey = apiKeyInput.value.trim();
+      errorBox.textContent = "";
+      output.textContent = "";
+
+      if (!text) {
+        errorBox.textContent = "文章を入力してください。";
+        return;
+      }
+      if (!apiKey) {
+        errorBox.textContent = "OpenAI APIキーを入力してください。";
+        return;
+      }
+
+      explainButton.disabled = true;
+      explainButton.textContent = "解説中...";
+
+      try {
+        // Chat Completions エンドポイント（OpenAI公式の例に合わせた形）
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            messages: [
+              {
+                role: "system",
+                content: "あなたは優しい日本語教師です。入力された文章の内容を、初心者にもわかるように噛み砕いて解説してください。必要なら箇条書きや例も使ってください。"
+              },
+              {
+                role: "user",
+                content: `この文章を解説してください:\n\n${text}`
+              }
+            ],
+            temperature: 0.4
+          })
+        });
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          console.error("API Error:", err);
+          throw new Error("APIリクエストに失敗しました。ステータス: " + response.status);
+        }
+
+        const data = await response.json();
+        const answer = data.choices?.[0]?.message?.content ?? "解説を取得できませんでした。";
+
+        output.textContent = answer;
+      } catch (e) {
+        console.error(e);
+        errorBox.textContent = "エラーが発生しました: " + e.message;
+      } finally {
+        explainButton.disabled = false;
+        explainButton.textContent = "解説してもらう";
+      }
+    });
+  </script>
+</body>
+</html>

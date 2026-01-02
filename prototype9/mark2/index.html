@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Swipe Card Prototype v2 — IndexedDB連携</title>
+<style>
+  body { 
+    margin: 0; 
+    background: #111; 
+    overflow: hidden; 
+    display: flex; 
+    justify-content: center; 
+    align-items: center; 
+    height: 100vh; 
+    color: white; 
+    font-family: sans-serif; 
+  }
+  
+  #card-container { 
+    position: relative; 
+    display: flex; 
+    gap: 0; 
+    transition: transform 0.25s ease; 
+    width: 100vw; 
+    height: 86vh; 
+  }
+  
+  .card { 
+    width: 25vw; 
+    height: 100%; 
+    border-radius: 0; 
+    display: flex; 
+    justify-content: center; 
+    align-items: center; 
+    font-size: 18px; 
+    user-select: none; 
+    touch-action: none; 
+    color: #fff; 
+    overflow: hidden; 
+    position: relative; 
+    padding: 12px; 
+    box-sizing: border-box; 
+  }
+  
+  .card .content { 
+    width: 100%; 
+    height: 100%; 
+    display: flex; 
+    justify-content: center; 
+    align-items: center; 
+    flex-direction: column; 
+  }
+  
+  .card img { 
+    max-width: 100%; 
+    max-height: 100%; 
+    object-fit: contain; 
+    display: block; 
+  }
+  
+  .analysis { 
+    overflow: auto; 
+    text-align: left; 
+    font-size: 14px; 
+    line-height: 1.4; 
+    padding: 8px; 
+  }
+  
+  #controls { 
+    position: fixed; 
+    bottom: 20px; 
+    display: flex; 
+    gap: 20px; 
+  }
+  
+  button { 
+    padding: 10px 20px; 
+    font-size: 18px; 
+    border-radius: 8px; 
+    border: none; 
+    cursor: pointer; 
+  }
+  
+  #uploader { 
+    position: fixed; 
+    top: 16px; 
+    left: 16px; 
+    z-index: 40; 
+    background: rgba(255,255,255,0.06); 
+    padding: 8px 12px; 
+    border-radius: 8px; 
+  }
+  
+  #toast { 
+    position: fixed; 
+    right: 16px; 
+    top: 16px; 
+    background: rgba(0,0,0,0.6); 
+    padding: 8px 12px; 
+    border-radius: 8px; 
+    font-size: 14px; 
+    display: none; 
+  }
+</style>
+</head>
+<body>
+
+<div id="uploader">
+  <label style="cursor:pointer;">
+    画像を選択
+    <input id="fileInput" type="file" accept="image/*" style="display:none" />
+  </label>
+  <button id="exportBtn">IndexedDBを見る（コンソール）</button>
+</div>
+
+<div id="card-container"></div>
+
+<div id="controls">
+  <button id="leftBtn">←</button>
+  <button id="rightBtn">→</button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  // ===== 設定 =====
+  const DB_NAME = 'SwipeCardsDB';
+  const DB_STORE = 'images';
+  let db = null;
+  let cards = [];
+  let focusIndex = 0;
+  let idCounter = 1;
+  
+  const TYPE_COLORS = { 
+    '画像': '#2b6cb0', 
+    '発想': '#d69e2e', 
+    '解析': '#38a169', 
+    'placeholder': '#444' 
+  };
+
+  // ===== ユーティリティ関数 =====
+  function createCard(type) { 
+    return { id: idCounter++, type, meta: null }; 
+  }
+
+  function openDB() { 
+    return new Promise((res, rej) => { 
+      const r = indexedDB.open(DB_NAME, 1); 
+      r.onupgradeneeded = (e) => { 
+        const idb = e.target.result; 
+        if (!idb.objectStoreNames.contains(DB_STORE)) {
+          idb.createObjectStore(DB_STORE, { keyPath: 'id' }); 
+        }
+      }; 
+      r.onsuccess = (e) => { 
+        db = e.target.result; 
+        res(db); 
+      }; 
+      r.onerror = (e) => rej(e.target.error); 
+    }); 
+  }
+
+  function saveRecord(rec) { 
+    return new Promise((res, rej) => { 
+      const tx = db.transaction(DB_STORE, 'readwrite'); 
+      const s = tx.objectStore(DB_STORE); 
+      const rq = s.put(rec); 
+      rq.onsuccess = () => res(); 
+      rq.onerror = (e) => rej(e.target.error); 
+    }); 
+  }
+
+  function dumpAll() { 
+    return new Promise((res, rej) => { 
+      if (!db) { 
+        res([]); 
+        return; 
+      } 
+      const tx = db.transaction(DB_STORE, 'readonly'); 
+      const s = tx.objectStore(DB_STORE); 
+      const all = []; 
+      const c = s.openCursor(); 
+      c.onsuccess = (e) => { 
+        const cur = e.target.result; 
+        if (cur) { 
+          all.push(cur.value); 
+          cur.continue(); 
+        } else {
+          res(all); 
+        }
+      }; 
+      c.onerror = (e) => rej(e.target.error); 
+    }); 
+  }
+
+  function showToast(msg, ms = 1500) { 
+    const t = document.getElementById('toast'); 
+    t.textContent = msg; 
+    t.style.display = 'block'; 
+    setTimeout(() => t.style.display = 'none', ms); 
+  }
+
+  function tokenizeText(text) { 
+    if (!text) return []; 
+    try {
+      return Array.from(text.matchAll(/[\p{L}\p{N}ー]+/gu)).map(m => m[0]); 
+    } catch (e) {
+      return text.split(/\s+/).filter(Boolean); 
+    }
+  }
+
+  // ===== 描画関数 =====
+  function render() { 
+    const container = document.getElementById('card-container'); 
+    container.innerHTML = ''; 
+    
+    let start = Math.max(0, focusIndex - 1); 
+    let end = start + 3; 
+    
+    if (end > cards.length - 1) { 
+      end = cards.length - 1; 
+      start = Math.max(0, end - 3);
+    }
+    
+    for (let i = start; i <= end; i++) { 
+      const item = cards[i]; 
+      const el = document.createElement('div'); 
+      el.className = 'card'; 
+      el.style.background = TYPE_COLORS[item.type] || TYPE_COLORS.placeholder; 
+      el.dataset.index = i; 
+      
+      const content = document.createElement('div'); 
+      content.className = 'content'; 
+      
+      if (item.type === '画像') { 
+        if (item.meta && item.meta.dataURL) {
+          const img = document.createElement('img'); 
+          img.src = item.meta.dataURL; 
+          img.alt = item.meta.name || 'uploaded image'; 
+          content.appendChild(img); 
+        } else { 
+          content.textContent = `画像（${item.id}）\n(画像をアップロードしてください)`; 
+        } 
+      } else if (item.type === '発想' || item.type === '解析') { 
+        const iframe = document.createElement('iframe'); 
+        iframe.style.width = '100%'; 
+        iframe.style.height = '100%'; 
+        iframe.style.border = 'none'; 
+        iframe.src = item.type === '発想' ? 'idea_site.html' : 'analysis_site.html'; 
+        iframe.onload = () => {
+          postRecentToIframe(iframe); 
+        }; 
+        content.appendChild(iframe); 
+        
+        if (item.meta && item.meta.analysis) {
+          const a = document.createElement('div'); 
+          a.className = 'analysis'; 
+          a.textContent = '解析結果:\n' + item.meta.analysis.text; 
+          content.appendChild(a); 
+        } 
+      } else { 
+        content.textContent = `${item.type}（${item.id}）`; 
+      } 
+      
+      el.appendChild(content); 
+      addSwipeListeners(el, i); 
+      container.appendChild(el); 
+    } 
+  }
+
+  // ===== スワイプ検出 =====
+  let pointerStartX = 0;
+  
+  function addSwipeListeners(cardEl, index) { 
+    cardEl.addEventListener('pointerdown', e => {
+      pointerStartX = e.clientX; 
+      cardEl.setPointerCapture && cardEl.setPointerCapture(e.pointerId); 
+    }); 
+    
+    cardEl.addEventListener('pointerup', async e => {
+      const dx = e.clientX - pointerStartX; 
+      
+      if (dx > 50) {
+        // 右スワイプ -> 発想カード
+        const newCard = createCard('発想'); 
+        cards.splice(index + 1, 0, newCard); 
+        focusIndex = index + 1; 
+        render(); 
+        setTimeout(() => postProcessToCard(index + 1, '発想'), 120); 
+      } else if (dx < -50) {
+        // 左スワイプ -> 解析カード
+        const newCard = createCard('解析'); 
+        cards.splice(index, 0, newCard); 
+        focusIndex = index; 
+        render(); 
+        setTimeout(() => postProcessToCard(index, '解析'), 120); 
+      } 
+    }); 
+  }
+
+  // ===== iFrame通信 =====
+  async function postProcessToCard(cardIndex, action) { 
+    const container = document.getElementById('card-container'); 
+    const el = container.querySelector(`[data-index='${cardIndex}']`); 
+    if (!el) return; 
+    
+    const iframe = el.querySelector('iframe'); 
+    if (!iframe || !iframe.contentWindow) return; 
+    
+    await openDB(); 
+    const all = await dumpAll(); 
+    const recent = all.slice(-10); 
+    
+    iframe.contentWindow.postMessage({
+      type: 'processFromParent', 
+      action, 
+      entries: recent, 
+      cardId: cards[cardIndex].id 
+    }, '*'); 
+  }
+
+  async function postRecentToIframe(iframeEl) { 
+    if (!iframeEl || !iframeEl.contentWindow) return; 
+    
+    await openDB(); 
+    const all = await dumpAll(); 
+    const recent = all.slice(-10); 
+    
+    iframeEl.contentWindow.postMessage({
+      type: 'recentEntries', 
+      entries: recent 
+    }, '*'); 
+  }
+
+  // ===== メッセージリスナー =====
+  window.addEventListener('message', async (ev) => {
+    const data = ev.data || {}; 
+    
+    if (!data.type) return; 
+    
+    if (data.type === 'saveAnalysis') {
+      await openDB(); 
+      const rec = {
+        id: 'child-analysis-' + Date.now() + '-' + Math.random().toString(36, 8),
+        cardId: data.cardId || null, 
+        type: '解析_from_iframe', 
+        payload: data.payload, 
+        savedAt: new Date().toISOString() 
+      }; 
+      await saveRecord(rec); 
+      console.log('Saved analysis from iframe:', rec); 
+      ev.source.postMessage({ type: 'saved', id: rec.id }, '*'); 
+    } else if (data.type === 'result') {
+      await openDB(); 
+      const rec = {
+        id: (data.action || 'result') + '-' + Date.now() + '-' + Math.random().toString(36, 8),
+        cardId: data.cardId || null, 
+        type: data.action || 'result', 
+        payload: data.payload, 
+        savedAt: new Date().toISOString() 
+      }; 
+      await saveRecord(rec); 
+      console.log('Saved result from iframe:', rec); 
+    } 
+  });
+
+  // ===== ファイル選択 =====
+  const fileInput = document.getElementById('fileInput'); 
+  
+  fileInput.addEventListener('change', async ev => {
+    const file = ev.target.files && ev.target.files[0]; 
+    if (!file) return; 
+    
+    if (!cards[focusIndex] || cards[focusIndex].type !== '画像') {
+      cards.splice(focusIndex, 0, createCard('画像')); 
+    }
+    
+    const reader = new FileReader(); 
+    reader.onload = async () => {
+      const dataURL = reader.result; 
+      cards[focusIndex].meta = {
+        dataURL, 
+        name: file.name, 
+        size: file.size, 
+        type: file.type, 
+        savedAt: new Date().toISOString() 
+      }; 
+      render(); 
+      
+      await openDB(); 
+      const textForToken = file.name + '\n' + (file.type || ''); 
+      const tokens = tokenizeText(textForToken); 
+      const record = {
+        id: 'img-' + cards[focusIndex].id + '-' + Date.now(),
+        cardId: cards[focusIndex].id, 
+        filename: file.name, 
+        fileType: file.type, 
+        fileSize: file.size, 
+        tokens, 
+        dataURL, 
+        savedAt: new Date().toISOString() 
+      }; 
+      await saveRecord(record); 
+      console.log('Saved to IndexedDB:', record); 
+      showToast('画像をIndexedDBに保存しました'); 
+      fileInput.value = ''; 
+    }; 
+    reader.readAsDataURL(file); 
+  });
+
+  // ===== ボタン制御 =====
+  const leftBtn = document.getElementById('leftBtn'); 
+  const rightBtn = document.getElementById('rightBtn'); 
+  
+  leftBtn.onclick = () => {
+    if (focusIndex > 0) focusIndex--; 
+    render(); 
+  }; 
+  
+  rightBtn.onclick = () => {
+    if (focusIndex < cards.length - 1) focusIndex++; 
+    render(); 
+  };
+
+  document.getElementById('exportBtn').addEventListener('click', async () => {
+    await openDB(); 
+    const all = await dumpAll(); 
+    console.log('IndexedDB contents:', all); 
+    alert('コンソールを確認してください（IndexedDBの内容を出力しました）'); 
+  });
+
+  // ===== 初期化 =====
+  openDB().then(() => {
+    console.log('DB ready'); 
+    render(); 
+  }).catch(e => {
+    console.error(e); 
+    render(); 
+  });
+
+</script>
+</body>
+</html>

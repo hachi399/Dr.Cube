@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>3段階連想ブレインストーム（密レイアウト版 - 修正済み）</title>
+  <style>
+    body{margin:0;font-family:system-ui,Inter,Roboto,sans-serif;background:#fafafa}
+    #graph{width:100vw;height:100vh;background:#fff}
+    .controls{position:fixed;top:10px;left:10px;display:flex;gap:8px;align-items:center;background:rgba(255,255,255,0.95);padding:8px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.06);z-index:10}
+    input{padding:8px 10px;font-size:14px;border:1px solid #ddd;border-radius:6px}
+    button{padding:8px 12px;font-size:14px;border-radius:6px;border:none;background:#ff7b50;color:#fff;cursor:pointer}
+    button[disabled]{opacity:0.6;cursor:default}
+    .notice{font-size:13px;color:#666}
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <input id="seedInput" type="text" placeholder="親ノード名（例：音楽）" />
+    <button id="addSeedBtn">生成（親→子3→孫3×3）</button>
+    <div class="notice">※孫ノード以上は生成しません</div>
+  </div>
+
+  <svg id="graph"></svg>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+    // --- 状態 ---
+    let nodes = [];
+    let links = [];
+    let idCounter = 0;
+
+    const svg = d3.select('#graph');
+    const width = () => window.innerWidth;
+    const height = () => window.innerHeight;
+    svg.attr('width', width()).attr('height', height());
+
+    // --- 力学レイアウト ---
+    // link.distance に関数を渡して親→子と子→孫で距離を分ける
+    const LINK_PARENT_CHILD = 40; // 親→子（ユーザー要求：50以上で美しい）
+    const LINK_CHILD_GRAND = 55;  // 子→孫
+
+    const simulation = d3.forceSimulation()
+      .force('link', d3.forceLink().id(d=>d.id).distance(link => {
+        // link: {source: nodeObj, target: nodeObj}
+        try{
+          const sDepth = link && link.source && typeof link.source.depth === 'number' ? link.source.depth : 0;
+          const tDepth = link && link.target && typeof link.target.depth === 'number' ? link.target.depth : 1;
+          if(sDepth === 0 && tDepth === 1) return LINK_PARENT_CHILD;
+          return LINK_CHILD_GRAND;
+        }catch(e){ return LINK_CHILD_GRAND; }
+      }))
+      .force('charge', d3.forceManyBody().strength(-100))    // 反発力をやや弱め
+      .force('center', d3.forceCenter(width()/2, height()/2))
+      .force('collision', d3.forceCollide(20))              // ノード同士の最小間隔（半径）
+      .on('tick', ticked);
+
+    const linkG = svg.append('g').attr('class','links');
+    const nodeG = svg.append('g').attr('class','nodes');
+
+    function makeId(){ return 'n' + (++idCounter); }
+    function findNodeById(id){ return nodes.find(n=>n.id===id); }
+
+    // addNode: depth を必ず渡す（0=親,1=子,2=孫）
+    function addNode(name, parentId=null, depth=0){
+      const n = { id: makeId(), name, depth };
+      // 初期位置は親の近くに置くと自然にまとまる
+      n.x = width()/2 + (Math.random()-0.5)*40;
+      n.y = height()/2 + (Math.random()-0.5)*40;
+      nodes.push(n);
+      if(parentId){
+        const parentNode = findNodeById(parentId);
+        if(parentNode){
+          // source/target はオブジェクト参照にする
+          links.push({ id: 'l' + links.length, source: parentNode, target: n });
+        }
+      }
+      return n;
+    }
+
+    function restart(){
+      // LINKS
+      const link = linkG.selectAll('line').data(links, d=>d.id);
+      link.exit().remove();
+      link.enter().append('line').attr('stroke','#bfbfbf').attr('stroke-width',2).merge(link);
+
+      // NODES
+      const node = nodeG.selectAll('g').data(nodes, d=>d.id);
+      node.exit().remove();
+
+      const nodeEnter = node.enter().append('g');
+      nodeEnter.append('circle').attr('r',16).attr('fill','#ffdca8').attr('stroke','#e6a86b').attr('stroke-width',2);
+      nodeEnter.append('text').attr('dy',4).attr('text-anchor','middle').style('font-size','11px').text(d=>d.name);
+
+      // update simulation data and restart
+      simulation.nodes(nodes);
+      simulation.force('link').links(links);
+      simulation.alpha(0.8).restart();
+    }
+
+    function ticked(){
+      nodeG.selectAll('g').attr('transform', d=>`translate(${d.x},${d.y})`);
+      linkG.selectAll('line')
+        .attr('x1', d=>d.source.x)
+        .attr('y1', d=>d.source.y)
+        .attr('x2', d=>d.target.x)
+        .attr('y2', d=>d.target.y);
+    }
+
+    // ---- ダミーの連想関数（実運用では OpenAI API を呼ぶ） ----
+    async function fetch3(word){
+      // 簡易ダミー: 番号付きの短語を返す
+      return [word + 'A', word + 'B', word + 'C'];
+    }
+
+    // ---- ボタン処理: 親を手動で作ったら即座に子3、孫3x3 を生成 ----
+    document.getElementById('addSeedBtn').addEventListener('click', async ()=>{
+      const seed = document.getElementById('seedInput').value.trim();
+      if(!seed){ alert('親ノード名を入力してください'); return; }
+
+      const btn = document.getElementById('addSeedBtn');
+      btn.disabled = true;
+      btn.textContent = '生成中...';
+
+      try{
+        // 親ノード（depth=0）
+        const parent = addNode(seed, null, 0);
+        restart();
+
+        // 子ノード3（depth=1）
+        const childWords = await fetch3(seed);
+        while(childWords.length < 3) childWords.push(seed + '_child');
+        const children = childWords.map(w => addNode(w, parent.id, 1));
+        restart();
+
+        // 各子から孫を3つずつ（depth=2）
+        for(const child of children){
+          const grandWords = await fetch3(child.name);
+          while(grandWords.length < 3) grandWords.push(child.name + '_grand');
+          grandWords.forEach(w => addNode(w, child.id, 2));
+          restart();
+          // 少し待って描画が追いつくようにする
+          await new Promise(r=>setTimeout(r, 80));
+        }
+
+      }finally{
+        btn.disabled = false;
+        btn.textContent = '生成（親→子3→孫3×3）';
+        document.getElementById('seedInput').value = '';
+      }
+    });
+
+    // レスポンシブ
+    window.addEventListener('resize', ()=>{
+      svg.attr('width', width()).attr('height', height());
+      simulation.force('center', d3.forceCenter(width()/2, height()/2));
+      simulation.alpha(0.3).restart();
+    });
+  </script>
+</body>
+</html>

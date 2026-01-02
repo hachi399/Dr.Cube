@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Swipe Card Prototype</title>
+<style>
+  body {
+    margin: 0;
+    background: #111;
+    overflow: hidden;
+    display: flex; justify-content: center; align-items: center;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    color: white;
+    font-family: sans-serif;
+  }
+
+  #card-container {
+    position: relative;
+    display: flex;
+    gap: 0;
+    transition: transform 0.3s ease;
+  }
+
+  .card {
+    width: 25vw;
+    height: 80vh;
+    border-radius: 14px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 32px;
+    user-select: none;
+    touch-action: none;
+    color: #fff;
+  }
+
+  #controls {
+    position: fixed;
+    bottom: 20px;
+    display: flex;
+    gap: 20px;
+  }
+
+  button {
+    padding: 10px 20px;
+    font-size: 18px;
+    border-radius: 8px;
+    border: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="card-container"></div>
+
+<div id="controls">
+  <button id="leftBtn">←</button>
+  <button id="rightBtn">→</button>
+</div>
+
+<script>
+let cards = []; // 全カード履歴（左右無限）
+let focusIndex = 0; // 画面中央のカード
+let counter = 1;
+
+// カード生成関数
+function createCard(type) {
+  return { id: counter++, type };
+}
+
+// 初期カード
+cards.push({ id: 0, type: "画像" });
+
+// 表示更新
+function render() {
+  const container = document.getElementById("card-container");
+  container.innerHTML = "";
+
+  let start = Math.max(0, focusIndex - 3);
+  let end = Math.min(cards.length - 1, focusIndex + 3);
+
+  for (let i = start; i <= end; i++) {
+    const c = document.createElement("div");
+    c.className = "card";
+    c.textContent = `${cards[i].type}（${cards[i].id}）`;
+    // カード色分け
+    if (cards[i].type === "画像") c.style.background = "#4444ff";
+    if (cards[i].type === "発想") c.style.background = "#44aa44";
+    if (cards[i].type === "解析") c.style.background = "#aa4444";
+
+    addSwipeListeners(c, i);
+    container.appendChild(c);
+  }
+}
+
+// スワイプ検出
+typeStartX = 0;
+function addSwipeListeners(card, index) {
+  card.addEventListener("pointerdown", e => { typeStartX = e.clientX; });
+  card.addEventListener("pointerup", e => {
+    let dx = e.clientX - typeStartX;
+    if (dx > 50) {
+      // 右スワイプ → 発想カード
+      cards.splice(index + 1, 0, createCard("発想"));
+      focusIndex = index + 1;
+    } else if (dx < -50) {
+      // 左スワイプ → 解析カード
+      cards.splice(index, 0, createCard("解析"));
+      focusIndex = index;
+    }
+    render();
+  });
+}
+
+// ←→ ボタン
+leftBtn.onclick = () => {
+  if (focusIndex > 0) focusIndex--;
+  render();
+};
+rightBtn.onclick = () => {
+  if (focusIndex < cards.length - 1) focusIndex++;
+  render();
+};
+
+render();
+</script>
+</body>
+</html>

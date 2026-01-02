@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>熟語抽出カード</title>
+<style>
+body {
+  margin:0;
+  padding:12px;
+  background:#000;
+  color:#fff;
+  font-family:sans-serif;
+}
+</style>
+</head>
+<body>
+
+<h4>熟語抽出</h4>
+<pre id="status">待機中…</pre>
+
+<script>
+const API_URL = "https://dr-cube-1.onrender.com/chat";
+
+window.addEventListener("message", async e => {
+  if (e.origin !== location.origin) return;
+  if (e.data.type !== "ANALYSIS_TEXT") return;
+
+  const text = e.data.payload;
+  document.getElementById("status").textContent = "抽出中…";
+
+  const prompt = `
+文章:
+${text}
+
+上の文章から熟語（2字以上の漢字のまとまり）のみを
+JSON配列で抽出してください。
+`;
+
+  const res = await fetch(API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt })
+  });
+
+  const data = await res.json();
+  document.getElementById("status").textContent = data.reply;
+
+  parent.postMessage(
+    { type: "TEXT_RESULT", payload: data.reply },
+    location.origin
+  );
+});
+</script>
+
+</body>
+</html>

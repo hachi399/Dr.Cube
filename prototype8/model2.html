@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Swipe Card Prototype — Image Save to IndexedDB</title>
+<style>
+  body {
+    margin: 0;
+    background: #111;
+    overflow: hidden;
+    display: flex; justify-content: center; align-items: center;
+    height: 100vh;
+    color: white;
+    font-family: sans-serif;
+  }
+
+  #card-container {
+    position: relative;
+    display: flex;
+    gap: 0;
+    transition: transform 0.3s ease;
+    width: 100vw;
+  }
+
+  .card {
+    width: 25vw;
+    height: 80vh;
+    border-radius: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 20px;
+    user-select: none;
+    touch-action: none;
+    color: #fff;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .card img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  #controls {
+    position: fixed;
+    bottom: 20px;
+    display: flex;
+    gap: 20px;
+  }
+
+  button {
+    padding: 10px 20px;
+    font-size: 18px;
+    border-radius: 8px;
+    border: none;
+  }
+
+  #uploader {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 40;
+    background: rgba(255,255,255,0.06);
+    padding: 8px 12px;
+    border-radius: 8px;
+  }
+
+  #toast {
+    position: fixed;
+    right: 16px;
+    top: 16px;
+    background: rgba(0,0,0,0.6);
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="uploader">
+  <label style="cursor:pointer;">画像を選択
+    <input id="fileInput" type="file" accept="image/*" style="display:none" />
+  </label>
+  <button id="exportBtn">IndexedDBを見る（コンソール）</button>
+</div>
+
+<div id="card-container"></div>
+
+<div id="controls">
+  <button id="leftBtn">←</button>
+  <button id="rightBtn">→</button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* --- データベース（IndexedDB）ユーティリティ --- */
+const DB_NAME = 'SwipeCardsDB';
+const DB_STORE = 'images';
+let db;
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = e => {
+      const idb = e.target.result;
+      if (!idb.objectStoreNames.contains(DB_STORE)) {
+        idb.createObjectStore(DB_STORE, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = e => { db = e.target.result; resolve(db); };
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+function saveImageRecord(record) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, 'readwrite');
+    const store = tx.objectStore(DB_STORE);
+    const req = store.put(record);
+    req.onsuccess = () => resolve();
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+async function dumpAll() {
+  const tx = db.transaction(DB_STORE, 'readonly');
+  const store = tx.objectStore(DB_STORE);
+  const all = [];
+  return new Promise((resolve, reject) => {
+    const cursorReq = store.openCursor();
+    cursorReq.onsuccess = e => {
+      const cur = e.target.result;
+      if (cur) { all.push(cur.value); cur.continue(); } else { resolve(all); }
+    };
+    cursorReq.onerror = e => reject(e.target.error);
+  });
+}
+
+/* --- アプリの状態 --- */
+let cards = []; // 全カード履歴
+let focusIndex = 0; // 現在中央にあるカードのインデックス（cards配列内）
+let counter = 1;
+
+function createCard(type, meta = {}) {
+  return { id: counter++, type, meta };
+}
+
+// 初期カードは画像カード（画像を埋められる）
+cards.push({ id: 0, type: '画像', meta: {} });
+
+/* --- レンダリング --- */
+function render() {
+  const container = document.getElementById('card-container');
+  container.innerHTML = '';
+
+  // 画面に表示するのは直近に使ったカードとその周り三枚のみ（最大4枚）
+  const start = Math.max(0, focusIndex - 1); // focusの左1枚
+  const end = Math.min(cards.length - 1, focusIndex + 2); // focusの右2枚 => 合計最大4
+
+  for (let i = start; i <= end; i++) {
+    const item = cards[i];
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.dataset.index = i;
+
+    // 色分け
+    if (item.type === '画像') el.style.background = '#4444ff';
+    if (item.type === '発想') el.style.background = '#44aa44';
+    if (item.type === '解析') el.style.background = '#aa4444';
+
+    // 画像があれば埋め込む
+    if (item.type === '画像' && item.meta && item.meta.dataURL) {
+      const img = document.createElement('img');
+      img.src = item.meta.dataURL;
+      el.appendChild(img);
+    } else {
+      el.textContent = `${item.type}（${item.id}）`;
+    }
+
+    addSwipeListeners(el, i);
+    container.appendChild(el);
+  }
+}
+
+// 簡易トースト
+function showToast(msg, ms = 1500) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  setTimeout(() => { t.style.display = 'none'; }, ms);
+}
+
+/* --- スワイプ検出 --- */
+let startX = 0;
+function addSwipeListeners(cardEl, index) {
+  cardEl.addEventListener('pointerdown', e => { startX = e.clientX; cardEl.setPointerCapture(e.pointerId); });
+  cardEl.addEventListener('pointerup', e => {
+    const dx = e.clientX - startX;
+    if (dx > 50) {
+      // 右スワイプ -> 発想カードを右に生成
+      cards.splice(index + 1, 0, createCard('発想'));
+      focusIndex = index + 1;
+    } else if (dx < -50) {
+      // 左スワイプ -> 解析カードを左に生成（indexの位置に挿入）
+      cards.splice(index, 0, createCard('解析'));
+      focusIndex = index; // 新しく挿入した解析カードをフォーカス
+    }
+    render();
+  });
+}
+
+/* --- ファイル選択時に現在フォーカス中の画像カードへ埋め込み、Base64(JSON)として保存 --- */
+const fileInput = document.getElementById('fileInput');
+fileInput.addEventListener('change', async (ev) => {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+
+  // 現在フォーカスしているカードが画像カードでない場合はその場に画像カードを追加してフォーカスする
+  if (!cards[focusIndex] || cards[focusIndex].type !== '画像') {
+    // 右側に発想カードが多い場合は左側に画像を作るほうが自然。ここでは常に現在位置に画像カードを挿入。
+    cards.splice(focusIndex, 0, createCard('画像'));
+  }
+
+  const reader = new FileReader();
+  reader.onload = async () => {
+    const dataURL = reader.result; // data:image/…;base64,....
+    // 埋め込み
+    cards[focusIndex].meta = { dataURL, name: file.name, size: file.size, type: file.type, savedAt: new Date().toISOString() };
+    render();
+
+    // JSON化してIndexedDBに保存
+    await openDB();
+    const record = {
+      id: 'img-' + cards[focusIndex].id + '-' + Date.now(),
+      cardId: cards[focusIndex].id,
+      filename: file.name,
+      fileType: file.type,
+      fileSize: file.size,
+      dataURL: dataURL,
+      savedAt: new Date().toISOString()
+    };
+    await saveImageRecord(record);
+    console.log('Saved to IndexedDB:', record);
+    showToast('画像をIndexedDBに保存しました');
+
+    // inputをリセット
+    fileInput.value = '';
+  };
+  reader.readAsDataURL(file);
+});
+
+// exportボタン
+document.getElementById('exportBtn').addEventListener('click', async () => {
+  await openDB();
+  const all = await dumpAll();
+  console.log('IndexedDB contents:', all);
+  alert('コンソールを確認してください（IndexedDBの内容を出力しました）');
+});
+
+/* --- 左右ボタン --- */
+const leftBtn = document.getElementById('leftBtn');
+const rightBtn = document.getElementById('rightBtn');
+leftBtn.onclick = () => { if (focusIndex > 0) focusIndex--; render(); };
+rightBtn.onclick = () => { if (focusIndex < cards.length - 1) focusIndex++; render(); };
+
+// 起動時にDBを開いておく
+openDB().then(() => console.log('DB ready')).catch(e => console.error(e));
+
+render();
+</script>
+</body>
+</html>

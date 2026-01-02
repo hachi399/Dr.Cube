@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Swipe Card — フル統合版</title>
+<style>
+  body{margin:0;background:#111;color:#fff;font-family:system-ui,Inter,Roboto,sans-serif}
+  #card-container{display:flex;width:100vw;height:100vh}
+  .card{width:25vw;height:100vh;box-sizing:border-box;padding:18px;display:flex;align-items:center;justify-content:center}
+  .card img{max-width:100%;max-height:100%;object-fit:contain}
+  .analysis{white-space:pre-wrap;text-align:left;font-size:14px}
+  #uploader{position:fixed;left:12px;top:12px;background:rgba(255,255,255,0.06);padding:8px;border-radius:8px}
+  #controls{position:fixed;right:12px;bottom:12px;display:flex;gap:8px}
+  button{padding:8px 12px;border-radius:8px;border:none;background:#fff;color:#000;cursor:pointer}
+  #toast{position:fixed;left:50%;transform:translateX(-50%);top:12px;background:rgba(0,0,0,0.6);padding:8px 12px;border-radius:8px;display:none}
+</style>
+</head>
+<body>
+<div id="uploader">
+  <label style="cursor:pointer">画像を選択<input id="fileInput" type="file" accept="image/*" style="display:none"/></label>
+  <button id="exportBtn">IndexedDBを見る（コンソール）</button>
+</div>
+<div id="card-container"></div>
+<div id="controls"><button id="leftBtn">←</button><button id="rightBtn">→</button></div>
+<div id="toast"></div>
+
+<script>
+// ---------------------------------
+// 設定
+// ---------------------------------
+const API_URL = 'https://dr-cube-1.onrender.com/chat';
+const DB_NAME = 'SwipeCardsDB';
+const DB_STORE = 'images';
+let db;
+
+// IndexedDB 開く
+function openDB(){
+  return new Promise((resolve,reject)=>{
+    const req = indexedDB.open(DB_NAME,1);
+    req.onupgradeneeded = e => { const idb = e.target.result; if(!idb.objectStoreNames.contains(DB_STORE)) idb.createObjectStore(DB_STORE,{keyPath:'id'}); };
+    req.onsuccess = e => { db = e.target.result; resolve(db); };
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+function saveImageRecord(record){ return new Promise((res,rej)=>{ const tx = db.transaction(DB_STORE,'readwrite'); const store = tx.objectStore(DB_STORE); const r = store.put(record); r.onsuccess = ()=>res(); r.onerror = e=>rej(e.target.error); }); }
+
+async function dumpAll(){ const tx = db.transaction(DB_STORE,'readonly'); const store = tx.objectStore(DB_STORE); return await new Promise((res,rej)=>{ const r = store.getAll(); r.onsuccess=()=>res(r.result); r.onerror=e=>rej(e); }); }
+
+// ---------------------------------
+// 単語抽出 / fetchWords
+// ---------------------------------
+function extractCoreWord(text){ if(!text) return null; const clean = String(text).replace(/[\n\r、。,.（）()「」]/g,' ').trim(); const parts = clean.split(/\s+/).filter(Boolean); for(const p of parts) if(p.length>=2) return p; return parts[0]||null; }
+
+async function fetchWords(word,count=6){ try{ const prompt = `「${word}」から連想される短い単語を${count}つ、日本語で出してください。出力は単語のみ、改行かカンマで区切ってください。`; const res = await fetch(API_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:prompt})}); const j = await res.json(); const text = j.reply||j.message||j.text||''; if(!text) return []; return String(text).split(/[、,\n]+/).map(s=>s.trim()).filter(Boolean).slice(0,count); }catch(e){ console.error(e); return []; } }
+
+async function analyzeImageViaAPI(dataURL){ try{ const res = await fetch(API_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:dataURL,message:'この画像を解析してください。'})}); if(!res.ok) throw new Error(res.status); const data = await res.json(); return data.reply||data.result||data.message||'';}catch(e){console.error(e);return '解析に失敗しました';} }
+
+// ---------------------------------
+// アプリの状態
+// ---------------------------------
+let cards=[]; let focusIndex=0; let counter=1;
+function createCard(type,meta={}){ return { id: counter++, type, meta }; }
+cards.push({ id:0, type:'画像', meta:{} });
+
+function render(){ const container = document.getElementById('card-container'); container.innerHTML=''; const start = Math.max(0, focusIndex-1); const end = Math.min(cards.length-1, focusIndex+2); for(let i=start;i<=end;i++){ const it = cards[i]; const el = document.createElement('div'); el.className='card'; el.dataset.index=i; if(it.type==='画像') el.style.background='#2222aa'; if(it.type==='発想') el.style.background='#228822'; if(it.type==='解析') el.style.background='#aa2222'; if(it.type==='画像' && it.meta.dataURL){ const img=document.createElement('img'); img.src=it.meta.dataURL; el.appendChild(img); } else if(it.type==='解析' && it.meta.analysis){ const d=document.createElement('div'); d.className='analysis'; d.textContent=it.meta.analysis.text; el.appendChild(d); } else if(it.type==='発想' && it.meta.ideas){ const d=document.createElement('div'); d.className='analysis'; d.textContent='親: '+(it.meta.parent||'')+'\n'+it.meta.ideas.join(' , '); el.appendChild(d); } else { el.textContent=`${it.type}（${it.id}）`; } addSwipeListeners(el,i); container.appendChild(el);} }
+
+function showToast(msg,ms=1400){ const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; setTimeout(()=>t.style.display='none',ms); }
+
+// ---------------------------------
+// 検索ユーティリティ
+// ---------------------------------
+function findNearestImage(index){ for(let d=0; d<=Math.max(index,cards.length-1-index); d++){ const left = index-d, right = index+d; if(left>=0 && cards[left] && cards[left].type==='画像' && cards[left].meta && cards[left].meta.dataURL) return {card:cards[left],idx:left}; if(right<cards.length && cards[right] && cards[right].type==='画像' && cards[right].meta && cards[right].meta.dataURL) return {card:cards[right],idx:right}; } return null; }
+
+async function getLatestAnalysisRecord(){ await openDB(); const all = await dumpAll(); const analyses = (all||[]).filter(x=>x.type==='解析'); analyses.sort((a,b)=>(b.savedAt||0)-(a.savedAt||0)); return analyses[0]||null; }
+
+// ---------------------------------
+// スワイプ/生成処理
+// ---------------------------------
+let startX=0;
+function addSwipeListeners(cardEl,index){ cardEl.addEventListener('pointerdown',e=>{ startX=e.clientX; cardEl.setPointerCapture(e.pointerId); }); cardEl.addEventListener('pointerup',async e=>{ const dx = e.clientX - startX; if(dx>50){ // 右スワイプ -> 発想
+    const newIdx = index+1; const newCard = createCard('発想'); cards.splice(newIdx,0,newCard); focusIndex=newIdx; render();
+    // 親ワードを決める
+    let seed = null; const src = cards[index]; if(src && src.type==='解析' && src.meta && src.meta.analysis && src.meta.analysis.text) seed = extractCoreWord(src.meta.analysis.text);
+    if(!seed){ const latest = await getLatestAnalysisRecord(); if(latest && latest.analysisText) seed = extractCoreWord(latest.analysisText); }
+    if(!seed) seed = 'アイデア';
+    showToast('発想を生成中...'); const ideas = await fetchWords(seed,6);
+    cards[newIdx].meta = { parent: seed, ideas, generatedAt: new Date().toISOString() };
+    render();
+    await openDB(); const record = { id:'idea-'+cards[newIdx].id+'-'+Date.now(), cardId:cards[newIdx].id, type:'発想', parent:seed, ideas, savedAt:new Date().toISOString() };
+    await saveImageRecord(record); console.log('Saved ideas',record); showToast('発想を保存しました');
+  } else if(dx < -50){ // 左スワイプ -> 解析
+    const newIdx = index; const newCard = createCard('解析'); cards.splice(newIdx,0,newCard); focusIndex=newIdx; render();
+    const nearest = findNearestImage(newIdx);
+    if(!nearest){ showToast('解析対象画像が見つかりません'); return; }
+    showToast('AI解析を実行しています...'); const analysisText = await analyzeImageViaAPI(nearest.card.meta.dataURL);
+    cards[newIdx].meta.analysis = { text:analysisText, sourceCardId:nearest.card.id, savedAt:new Date().toISOString() };
+    render(); await openDB(); const record = { id:'analysis-'+cards[newIdx].id+'-'+Date.now(), cardId:cards[newIdx].id, type:'解析', sourceCardId:nearest.card.id, analysisText, savedAt:new Date().toISOString() };
+    await saveImageRecord(record); console.log('Saved analysis',record); showToast('解析結果を保存しました');
+    // 解析から自動で簡易ブレストも生成して保存
+    const core = extractCoreWord(analysisText);
+    if(core){ const nodes=[], links=[]; nodes.push({id:core,name:core,depth:0}); for(let i=1;i<=3;i++){ const c = core+'_idea'+i; nodes.push({id:c,name:c,depth:1}); links.push({source:core,target:c}); for(let j=1;j<=3;j++){ const g = c+'_sub'+j; nodes.push({id:g,name:g,depth:2}); links.push({source:c,target:g}); } } await saveBrainstormResult(core,nodes,links); showToast('解析→ブレストを保存しました'); }
+  } }); }
+
+// ---------------------------------
+// 画像アップロード保存
+// ---------------------------------
+const fileInput = document.getElementById('fileInput'); fileInput.addEventListener('change', async ev=>{ const file = ev.target.files && ev.target.files[0]; if(!file) return; if(!cards[focusIndex] || cards[focusIndex].type!=='画像') cards.splice(focusIndex,0,createCard('画像'));
+  const reader = new FileReader(); reader.onload = async ()=>{ const dataURL = reader.result; cards[focusIndex].meta = { dataURL, name:file.name, size:file.size, type:file.type, savedAt:new Date().toISOString() }; render(); await openDB(); const rec = { id:'img-'+cards[focusIndex].id+'-'+Date.now(), cardId:cards[focusIndex].id, filename:file.name, fileType:file.type, fileSize:file.size, dataURL, savedAt:new Date().toISOString() }; await saveImageRecord(rec); console.log('Saved image',rec); showToast('画像を保存しました'); fileInput.value = ''; }; reader.readAsDataURL(file); });
+
+document.getElementById('exportBtn').addEventListener('click', async ()=>{ await openDB(); const all = await dumpAll(); console.log('IndexedDB contents:', all); alert('コンソールを確認してください（IndexedDBの内容を出力しました）'); });
+
+document.getElementById('leftBtn').addEventListener('click', ()=>{ if(focusIndex>0) focusIndex--; render(); });
+document.getElementById('rightBtn').addEventListener('click', ()=>{ if(focusIndex < cards.length-1) focusIndex++; render(); });
+
+// start
+openDB().then(()=>console.log('DB ready')).catch(e=>console.error(e)); render();
+</script>
+</body>
+</html>

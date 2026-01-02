@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Card History Panels</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--accent:#0ea5ff;--muted:#94a3b8}
+    html,body{height:100%;margin:0;font-family:system-ui,Segoe UI,Roboto,'Hiragino Kaku Gothic ProN',sans-serif;background:linear-gradient(180deg,#071129 0%,#071827 100%);color:#e6eef8}
+    .layout{display:grid;grid-template-columns:1fr 320px 1fr;height:100%;}
+    .column{padding:12px;overflow-x:auto;overflow-y:hidden;display:flex;flex-direction:row;gap:12px;white-space:nowrap;}
+    .panel{background:rgba(255,255,255,0.05);padding:14px;border-radius:10px;border:1px solid rgba(255,255,255,0.06)}
+    .card{background:#0b1220;padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,0.08)}
+    .value{font-size:26px;font-weight:700;margin-bottom:8px}
+    button{background:var(--accent);color:#04263b;padding:8px 12px;border-radius:8px;border:none;cursor:pointer;margin-right:6px}
+    .small{background:#0b1220;color:var(--muted);border:1px solid rgba(255,255,255,0.08)}
+  </style>
+</head>
+<body>
+  <div class="layout">
+
+    <!-- 左カード履歴（ページAの結果） -->
+    <div class="column" id="colA"></div>
+
+    <!-- 中央：操作パネル -->
+    <div class="column" style="border-left:1px solid #0003;border-right:1px solid #0003;">
+      <div class="panel">
+        <h2>ページA（+100）</h2>
+        <div class="value" id="valueA">読み込み中…</div>
+        <button id="btnPlus">+100</button>
+      </div>
+
+      <div class="panel">
+        <h2>ページB（-200）</h2>
+        <div class="value" id="valueB">読み込み中…</div>
+        <button id="btnMinus">-200</button>
+      </div>
+
+      <div class="panel">
+        <button class="small" id="btnReset">リセット</button>
+      </div>
+    </div>
+
+    <!-- 右カード履歴（ページBの結果） -->
+    <div class="column" id="colB"></div>
+
+  </div>
+
+<script>
+// --- IndexedDB 基本部 ---
+function openDB(){
+  return new Promise((res,rej)=>{
+    const r = indexedDB.open('shared-counter-db',1);
+    r.onupgradeneeded = e =>{
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains('store')) db.createObjectStore('store');
+    };
+    r.onsuccess = e => res(e.target.result);
+    r.onerror = e => rej(e.target.error);
+  });
+}
+
+async function getValue(){
+  const db = await openDB();
+  return new Promise((res,rej)=>{
+    const tx = db.transaction('store','readonly');
+    const st = tx.objectStore('store');
+    const rq = st.get('value');
+    rq.onsuccess = ()=> res(rq.result ?? 0);
+    rq.onerror = ()=> rej(rq.error);
+  });
+}
+
+async function setValue(v){
+  const db = await openDB();
+  return new Promise((res,rej)=>{
+    const tx = db.transaction('store','readwrite');
+    const st = tx.objectStore('store');
+    const rq = st.put(v,'value');
+    rq.onsuccess = ()=> res();
+    rq.onerror = ()=> rej(rq.error);
+  });
+}
+
+// --- UI  ---
+const elA = document.getElementById('valueA');
+const elB = document.getElementById('valueB');
+const colA = document.getElementById('colA');
+const colB = document.getElementById('colB');
+
+async function refresh(){
+  const v = await getValue();
+  elA.textContent = v;
+  elB.textContent = v;
+}
+
+// カード追加
+function addCard(column, label, value){
+  const div = document.createElement('div');
+  div.className = 'card';
+  div.style.display = 'inline-block';
+  div.innerHTML = `<div class="value">${value}</div><div>${label}</div>`;
+  column.appendChild(div);(div); // 上側に積む
+}
+
+// --- イベント ---
+document.getElementById('btnPlus').onclick = async ()=>{
+  const cur = await getValue();
+  const nv = cur + 100;
+  await setValue(nv);
+  await refresh();
+  addCard(colA, '+100 実行', nv);
+};
+
+document.getElementById('btnMinus').onclick = async ()=>{
+  const cur = await getValue();
+  const nv = cur - 200;
+  await setValue(nv);
+  await refresh();
+  addCard(colB, '-200 実行', nv);
+};
+
+document.getElementById('btnReset').onclick = async ()=>{
+  await setValue(0);
+  await refresh();
+};
+
+refresh();
+</script>
+</body>
+</html>

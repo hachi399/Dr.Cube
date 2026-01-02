@@ -1,0 +1,8 @@
+@charset 'utf-8';
+
+#result {
+	width: 100%;
+}
+#result textarea {
+	width: 98%;
+}

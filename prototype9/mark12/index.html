@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gemini Chat App</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- Markdownレンダリング用 -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- Mermaidレンダリング用 -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <!-- コードハイライト用 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <!-- サイドバー -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h2>Gemini Chat</h2>
+        <button class="btn-icon" id="newChatBtn" title="新しいチャット">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- プロンプトテンプレート -->
+      <div class="templates-section">
+        <h3>プロンプトテンプレート</h3>
+        <select id="templateSelect" class="template-select">
+          <option value="default">デフォルト</option>
+          <option value="creative">創造的</option>
+          <option value="technical">技術的</option>
+          <option value="casual">カジュアル</option>
+          <option value="educational">教育的</option>
+        </select>
+      </div>
+
+      <!-- チャット履歴（簡易版） -->
+      <div class="history-section">
+        <h3>チャット履歴</h3>
+        <button class="btn-secondary" id="clearHistoryBtn">履歴をクリア</button>
+      </div>
+    </aside>
+
+    <!-- メインコンテンツ -->
+    <main class="main-content">
+      <!-- チャットエリア -->
+      <div class="chat-container" id="chatContainer">
+        <div class="welcome-message">
+          <h1>Gemini Chatへようこそ</h1>
+          <p>メッセージを送信するか、ファイルをアップロードして会話を始めましょう。</p>
+        </div>
+      </div>
+
+      <!-- 入力エリア -->
+      <div class="input-area">
+        <div class="input-wrapper">
+          <!-- ファイルアップロードボタン -->
+          <label for="fileInput" class="file-upload-btn" title="ファイルをアップロード">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+            </svg>
+          </label>
+          <input type="file" id="fileInput" accept="image/*,video/*" style="display: none;">
+          
+          <!-- テキスト入力 -->
+          <textarea 
+            id="messageInput" 
+            placeholder="メッセージを入力..." 
+            rows="1"
+          ></textarea>
+          
+          <!-- 送信ボタン -->
+          <button id="sendBtn" class="send-btn" title="送信">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+            </svg>
+          </button>
+        </div>
+        
+        <!-- ファイルプレビュー -->
+        <div id="filePreview" class="file-preview"></div>
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
+

@@ -1,0 +1,39 @@
+# 依存関係
+node_modules/
+package-lock.json
+
+# データベース
+*.db
+*.db-shm
+*.db-wal
+
+# 環境変数
+.env
+.env.local
+.env.*.local
+
+# ログ
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 一時ファイル
+*.tmp
+*.temp
+
+# ビルド成果物
+dist/
+build/
+

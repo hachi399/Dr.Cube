@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>熟語抽出 with IndexedDB（完全固定版）</title>
+  <style>
+    body { margin:0; padding:20px; font-family:sans-serif; background:#111; color:#fff; }
+    textarea { width:100%; height:120px; background:#222; color:#fff; border:1px solid #333; padding:8px; border-radius:6px; }
+    button { padding:8px 12px; margin:6px 6px 6px 0; border-radius:6px; border:none; cursor:pointer; background:#0a84ff; color:#fff; }
+    .muted { background:#444; color:#ddd; }
+    .list { margin-top:16px; }
+    .item { background:#1b1b1b; padding:12px; margin-bottom:10px; border-radius:8px; }
+    .meta { font-size:12px; color:#aaa; margin-bottom:8px; }
+    pre { background:#0f0f0f; padding:10px; border-radius:6px; color:#dcdcdc; overflow:auto; }
+  </style>
+</head>
+<body>
+<h2>文章保存 → 熟語抽出（API完全固定・安定版）</h2>
+
+<textarea id="inputText" placeholder="ここに文章を入力してください"></textarea>
+<div>
+  <button id="saveBtn">保存</button>
+  <button id="extractBtn" class="muted">未抽出を一括処理</button>
+</div>
+
+<div id="list" class="list"></div>
+
+<script>
+// ================= 設定 =================
+const API_URL = "https://dr-cube-1.onrender.com/chat";
+const DB_NAME = "jukugoDB";
+const STORE_NAME = "texts";
+let db;
+
+// ================= IndexedDB =================
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = e => {
+      const database = e.target.result;
+      if (!database.objectStoreNames.contains(STORE_NAME)) {
+        database.createObjectStore(STORE_NAME, { keyPath: "id", autoIncrement: true });
+      }
+    };
+    req.onsuccess = e => { db = e.target.result; resolve(); };
+    req.onerror = e => reject(e);
+  });
+}
+
+function addText(text) {
+  const tx = db.transaction(STORE_NAME, "readwrite");
+  tx.objectStore(STORE_NAME).add({
+    text,
+    created: Date.now(),
+    extracted: false,
+    result: []
+  });
+}
+
+function getAll() {
+  return new Promise(resolve => {
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const req = tx.objectStore(STORE_NAME).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+  });
+}
+
+function update(item) {
+  const tx = db.transaction(STORE_NAME, "readwrite");
+  tx.objectStore(STORE_NAME).put(item);
+}
+
+// ================= UI =================
+async function render() {
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  const items = await getAll();
+  items.sort((a,b)=>b.created-a.created);
+
+  items.forEach(it => {
+    const div = document.createElement("div");
+    div.className = "item";
+    div.innerHTML = `
+      <div class="meta">${new Date(it.created).toLocaleString()}</div>
+      <div style="white-space:pre-wrap">${escapeHtml(it.text)}</div>
+      ${it.extracted ? `<pre>${escapeHtml(JSON.stringify(it.result, null, 2))}</pre>` : ""}
+    `;
+    list.appendChild(div);
+  });
+}
+
+function escapeHtml(s){
+  return s?.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') || '';
+}
+
+// ================= AI 熟語抽出 =================
+async function extractAll() {
+  const items = await getAll();
+
+  for (const it of items) {
+    if (it.extracted) continue;
+
+    const prompt = `あなたは日本語テキストを処理するプログラムです。
+会話・挨拶・説明・前置き・後書きは禁止です。
+
+【タスク】
+入力された文章から「2文字以上の漢字のみで構成された熟語」を抽出してください。
+
+【厳格な出力ルール】
+- 出力は JSON 配列のみ
+- 文字列はすべて漢字のみ
+- 2文字未満は禁止
+- 配列以外の出力は禁止
+- コメント・説明文・挨拶は禁止
+
+【正しい出力例】
+["人工知能","情報処理","高速化"]
+
+【入力文章】
+${it.text}`;
+
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt })
+    });
+
+    const data = await res.json();
+    const raw = data.reply || "";
+    const jsonPart = raw.match(/\[[\s\S]*\]/)?.[0];
+    if (!jsonPart) continue;
+
+    try {
+      const parsed = JSON.parse(jsonPart);
+      // 最終安全フィルタ（漢字2文字以上のみ）
+      it.result = parsed.filter(w => typeof w === "string" && /^[一-龠]{2,}$/.test(w));
+      it.extracted = true;
+      update(it);
+    } catch(e) {
+      console.warn("JSON解析失敗", raw);
+    }
+  }
+
+  render();
+}
+
+// ================= Init =================
+(async ()=>{
+  await openDB();
+  await render();
+
+  document.getElementById("saveBtn").onclick = () => {
+    const t = inputText.value.trim();
+    if (!t) return;
+    addText(t);
+    inputText.value = "";
+    render();
+  };
+
+  document.getElementById("extractBtn").onclick = extractAll;
+})();
+</script>
+</body>
+<body>
+  <h1>文章から熟語抽出</h1>
+  <textarea id="inputText" rows="6" cols="60" placeholder="ここに文章を入力してください"></textarea><br>
+  <button id="extractBtn">熟語を抽出</button>
+
+  <h2>抽出結果</h2>
+  <pre id="result"></pre>
+
+  <script>
+    const API_KEY = "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"; // ← OpenAIのAPIキーを入れてください
+
+    document.getElementById("extractBtn").addEventListener("click", async () => {
+      const text = document.getElementById("inputText").value;
+
+      const messages = [
+        { role: "system", content: "あなたは日本語の言語処理に詳しいアシスタントです。" },
+        { role: "user", content: `以下の文章から熟語（2字以上の漢字のまとまり）だけを抽出し、JSON配列で返してください。\n\n文章: ${text}` }
+      ];
+
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${API_KEY}`
+        },
+        body: JSON.stringify({
+          model: "gpt-4.1-mini",
+          messages: messages,
+          temperature: 0
+        })
+      });
+
+      const data = await response.json();
+      const result = data.choices[0].message.content;
+      document.getElementById("result").textContent = result;
+    });
+  </script>
+</body>
+</html>

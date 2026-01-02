@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Image → AI解析 → Wikipedia</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+body {
+  margin: 0;
+  padding: 20px;
+  font-family: system-ui, sans-serif;
+  background: #111;
+  color: #fff;
+}
+
+button {
+  padding: 10px 18px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+}
+
+#preview {
+  max-width: 300px;
+  margin-top: 10px;
+  border-radius: 8px;
+}
+
+.section {
+  margin-top: 20px;
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.08);
+}
+
+#wiki img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+#wiki a {
+  color: #7ecbff;
+  font-size: 14px;
+  text-decoration: none;
+}
+</style>
+</head>
+
+<body>
+
+<h2>画像 → AI解析 → Wikipedia</h2>
+
+<input type="file" id="fileInput" accept="image/*">
+<button onclick="analyze()">解析</button>
+
+<img id="preview">
+
+<div class="section">
+  <h3>AI解析文</h3>
+  <div id="analysisText"></div>
+</div>
+
+<div class="section">
+  <h3>熟語抽出カード（iframe）</h3>
+  <iframe
+    id="jukugoFrame"
+    src="jukugo_card.html"
+    style="width:100%;height:320px;border:none;border-radius:8px;background:#000;">
+  </iframe>
+</div>
+
+<div class="section">
+  <h3>Wikipedia 図解</h3>
+  <div id="wiki">待機中…</div>
+</div>
+
+<script>
+const API_URL = "https://dr-cube-1.onrender.com/chat";
+let lastImageBase64 = "";
+
+/* ===============================
+   画像解析
+================================ */
+async function analyze(){
+  const file = document.getElementById("fileInput").files[0];
+  if(!file) return alert("画像を選択してください");
+
+  const base64 = await toBase64(file);
+  lastImageBase64 = base64;
+  document.getElementById("preview").src = base64;
+
+  const prompt = "この画像を解析し、内容を詳しく文章で説明してください。";
+
+  const res = await fetch(API_URL, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    message: prompt,
+    image: base64,
+    mode: "kids"   // ← ここに入れる
+  })
+});
+
+  const data = await res.json();
+  document.getElementById("analysisText").textContent = data.reply;
+
+  // iframeへ解析文送信
+  document.getElementById("jukugoFrame").contentWindow.postMessage(
+    { type: "ANALYSIS_TEXT", payload: data.reply },
+    location.origin
+  );
+}
+
+/* ===============================
+   熟語抽出結果を受信
+================================ */
+window.addEventListener("message", e => {
+  if (e.origin !== location.origin) return;
+
+  if (e.data.type === "TEXT_RESULT") {
+    let words;
+    try {
+      words = JSON.parse(e.data.payload);
+    } catch {
+      return;
+    }
+
+    const keyword = chooseKeyword(words);
+    loadWikipediaWithFallback(keyword);
+  }
+});
+
+/* ===============================
+   Wikipedia
+================================ */
+async function loadWikipediaWithFallback(keyword){
+  const box = document.getElementById("wiki");
+  box.textContent = "Wikipediaから図を取得中…";
+
+  if (keyword) {
+    const primary = await fetchWiki(keyword);
+    if (primary?.thumbnail) return renderWiki(primary);
+  }
+
+  for(let i=0;i<5;i++){
+    const random = await fetchRandomWiki();
+    if (random?.thumbnail) return renderWiki(random);
+  }
+
+  box.textContent = "図を取得できませんでした";
+}
+
+async function fetchWiki(title){
+  try {
+    const res = await fetch(
+      `https://ja.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`
+    );
+    if(!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+async function fetchRandomWiki(){
+  try {
+    const res = await fetch(
+      "https://ja.wikipedia.org/api/rest_v1/page/random/summary"
+    );
+    if(!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+function renderWiki(data){
+  document.getElementById("wiki").innerHTML = `
+    <img src="${data.thumbnail.source}">
+    <a href="${data.content_urls.desktop.page}" target="_blank">
+      Wikipediaで詳しく
+    </a>
+  `;
+}
+
+/* ===============================
+   熟語選択ロジック
+================================ */
+function chooseKeyword(words){
+  if(!words || words.length === 0) return null;
+  return [...words].sort((a,b)=>b.length-a.length)[0];
+}
+
+/* ===============================
+   Utility
+================================ */
+function toBase64(file){
+  return new Promise(resolve=>{
+    const r = new FileReader();
+    r.onload = ()=>resolve(r.result);
+    r.readAsDataURL(file);
+  });
+}
+</script>
+
+</body>
+</html>

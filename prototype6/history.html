@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>解析履歴アップグレード版</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #eef1f5;
+      margin: 0;
+      padding: 30px;
+    }
+
+    h2 {
+      margin-bottom: 10px;
+    }
+
+    /* 入力ボックス */
+    .input-box, .search-box {
+      background: #fff;
+      padding: 20px;
+      border-radius: 16px;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+      margin-bottom: 30px;
+    }
+
+    textarea {
+      width: 100%;
+      border-radius: 10px;
+      padding: 10px;
+    }
+
+    input {
+      width: 100%;
+      padding: 10px;
+      border-radius: 10px;
+    }
+
+    /* ボタン */
+    button {
+      margin-top: 10px;
+      padding: 10px 20px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 15px;
+    }
+    button:hover {
+      background: #0056d2;
+    }
+
+    /* カード一覧 */
+    #history {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }
+
+    /* カード */
+    .card {
+      background: #fff;
+      padding: 20px;
+      border-radius: 20px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.12);
+      transition: transform 0.15s ease, box-shadow 0.2s ease;
+    }
+    .card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+    }
+
+    /* タグ */
+    .tag {
+      display: inline-block;
+      background: #dfe8ff;
+      color: #2957a4;
+      padding: 4px 10px;
+      border-radius: 8px;
+      margin-right: 6px;
+      margin-top: 6px;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- 入力 -->
+<div class="input-box">
+  <h2>解析内容の保存</h2>
+  <textarea id="inputText" rows="5"></textarea>
+
+  <h3>タグ（カンマ区切り）</h3>
+  <input id="inputTags" placeholder="例：英語, 勉強, AI">
+
+  <button onclick="save()">保存する</button>
+</div>
+
+<!-- 検索 -->
+<div class="search-box">
+  <h2>検索</h2>
+  <input id="searchInput" oninput="load()" placeholder="キーワード or タグで検索">
+</div>
+
+<!-- 履歴 -->
+<h2>履歴一覧</h2>
+<div id="history"></div>
+
+
+<script>
+function save() {
+  const text = document.getElementById("inputText").value.trim();
+  const tags = document.getElementById("inputTags").value.trim();
+
+  if (!text) return alert("内容を入力してください");
+
+  const tagList = tags ? tags.split(",").map(t => t.trim()) : [];
+
+  const history = JSON.parse(localStorage.getItem("history") || "[]");
+
+  history.unshift({
+    id: Date.now(),
+    text,
+    tags: tagList,
+    time: new Date().toLocaleString()
+  });
+
+  localStorage.setItem("history", JSON.stringify(history));
+
+  document.getElementById("inputText").value = "";
+  document.getElementById("inputTags").value = "";
+
+  load();
+}
+
+function load() {
+  const query = document.getElementById("searchInput").value.toLowerCase();
+  const history = JSON.parse(localStorage.getItem("history") || "[]");
+
+  const result = history.filter(item =>
+    item.text.toLowerCase().includes(query) ||
+    item.tags.some(tag => tag.toLowerCase().includes(query))
+  );
+
+  const container = document.getElementById("history");
+  container.innerHTML = "";
+
+  result.forEach(h => {
+    const card = document.createElement("div");
+    card.className = "card";
+
+    let tagHTML = "";
+    h.tags.forEach(tag => {
+      tagHTML += `<span class='tag'>${tag}</span>`;
+    });
+
+    card.innerHTML = `
+      <h3>${h.time}</h3>
+      <p>${h.text}</p>
+      <div>${tagHTML}</div>
+    `;
+
+    container.appendChild(card);
+  });
+}
+
+load();
+</script>
+
+</body>
+</html>

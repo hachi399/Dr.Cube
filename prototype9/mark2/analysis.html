@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>解析サイト v2 (Analysis Site)</title>
+<style> body{font-family:sans-serif;padding:16px;background:#fff} input,button{font-size:16px;padding:8px;margin:6px} textarea{width:100%;height:200px} </style>
+</head>
+<body>
+  <h2>解析サイト（v2 モック）</h2>
+  <div>
+    <label>検索バー: <input id="searchBar" placeholder="親サイトから自動入力されます"></label>
+    <button id="analyze">解析を実行</button>
+  </div>
+  <h3>解析結果（トークン）</h3>
+  <textarea id="out" readonly></textarea>
+
+<script>
+function tokenizeText(text){ if(!text) return []; try{ return Array.from(text.matchAll(/[\p{L}\p{N}ー]+/gu)).map(m=>m[0]); }catch(e){ return text.split(/\s+/).filter(Boolean); } }
+
+window.addEventListener('message',(ev)=>{
+  const d=ev.data||{};
+  if(d.type==='recentEntries'&&Array.isArray(d.entries)){
+    const sb=document.getElementById('searchBar'); if(d.entries.length>0){ const last=d.entries[d.entries.length-1]; const hint= last.filename || (last.analysisText? last.analysisText.slice(0,80) : (last.payload && JSON.stringify(last.payload).slice(0,80))) || ''; sb.value = hint; }
+  }
+
+  if(d.type==='processFromParent'){
+    const entries = d.entries || [];
+    const texts=[];
+    entries.forEach(e=>{ if(e.filename) texts.push(e.filename); if(e.analysisText) texts.push(e.analysisText); if(e.payload) texts.push(JSON.stringify(e.payload)); });
+    const big = texts.join('\n');
+    const tokens = tokenizeText(big);
+    document.getElementById('out').value = tokens.join('\n');
+    // 親へトークン化結果を送る
+    parent.postMessage({ type:'result', action:'解析', cardId:d.cardId||null, payload:{ tokens, textSample: big.slice(0,400) } }, '*');
+  }
+});
+
+document.getElementById('analyze').addEventListener('click', ()=>{
+  const q=document.getElementById('searchBar').value || '';
+  const tokens = tokenizeText(q);
+  document.getElementById('out').value = tokens.join('\n');
+  parent.postMessage({ type:'result', action:'解析', cardId:null, payload:{ tokens, textSample:q.slice(0,400) } }, '*');
+});
+
+// 起動時に親へ最近のエントリ要求
+parent.postMessage({ type:'requestRecent' }, '*');
+</script>
+</body>
+</html>

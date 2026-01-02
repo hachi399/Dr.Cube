@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>IndexedDB Viewer</title>
+  <style>
+    body { background:#111; color:#fff; font-family:sans-serif; padding:20px; }
+    .item { background:#222; padding:10px; margin-top:10px; border-radius:6px; }
+  </style>
+</head>
+<body>
+
+<h2>IndexedDB Viewer（リアルタイム）</h2>
+
+<button id="addBtn">ランダム追加</button>
+
+<div id="list"></div>
+
+<script>
+let db;
+
+// ✅ DB 初期化
+initDB();
+
+function initDB() {
+  const req = indexedDB.open("liveDB", 1);
+
+  req.onupgradeneeded = e => {
+    const db = e.target.result;
+    if (!db.objectStoreNames.contains("items")) {
+      db.createObjectStore("items", { keyPath: "id", autoIncrement: true });
+    }
+  };
+
+  req.onsuccess = e => {
+    db = e.target.result;
+
+    // ✅ DB の変更を監視（別タブからの変更も拾える）
+    db.onversionchange = () => location.reload();
+
+    // ✅ 初回ロード
+    renderList();
+
+    // ✅ トランザクション完了ごとに再描画（リアルタイム更新）
+    db.onclose = () => console.log("DB closed");
+  };
+}
+
+// ✅ データ追加
+document.getElementById("addBtn").onclick = () => {
+  const tx = db.transaction("items", "readwrite");
+  const store = tx.objectStore("items");
+  store.add({ time: Date.now(), value: Math.random().toString(36).slice(2) });
+
+  tx.oncomplete = () => renderList(); // ✅ 追加後に即更新
+};
+
+// ✅ DB の内容を描画
+function renderList() {
+  const tx = db.transaction("items", "readonly");
+  const store = tx.objectStore("items");
+  const req = store.getAll();
+
+  req.onsuccess = () => {
+    const list = document.getElementById("list");
+    list.innerHTML = "";
+
+    req.result.forEach(item => {
+      const div = document.createElement("div");
+      div.className = "item";
+      div.innerHTML = `
+        <b>ID:</b> ${item.id}<br>
+        <b>Value:</b> ${item.value}<br>
+        <b>Time:</b> ${new Date(item.time).toLocaleString()}
+      `;
+      list.appendChild(div);
+    });
+  };
+}
+</script>
+
+</body>
+</html>

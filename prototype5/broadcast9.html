@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>ブレインストーミング AI</title>
+<style>
+  body {
+    display: flex;
+    margin: 0;
+    background: #f5f5f5;
+    color: #333;
+    font-family: sans-serif;
+  }
+  #sidebar {
+    width: 280px;
+    background: #ffffff;
+    padding: 16px;
+    box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+  }
+  #graphArea {
+    flex-grow: 1;
+  }
+  #description {
+    white-space: pre-wrap;
+  }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h2>説明</h2>
+  <div id="description">ノードをドラッグすると説明がここに表示されます</div>
+</div>
+
+<div id="graphArea">
+  <svg id="svg" width="100%" height="100vh"></svg>
+</div>
+
+<script>
+// =======================
+// 設定
+// =======================
+const API_KEY = "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"; // ← ここをあなたのAPIキーに置き換えてください
+async function chatGPT(prompt) {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${API_KEY}`
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }]
+    })
+  });
+
+  const data = await res.json();
+  return data.choices[0].message.content;
+}
+
+// =======================
+// D3 初期化
+// =======================
+const svg = d3.select("#svg");
+const width = window.innerWidth - 280;
+const height = window.innerHeight;
+
+let nodes = [
+  { id: 0, text: "スタート", x: width/2, y: height/2 }
+];
+let links = [];
+let nodeId = 1;
+
+const simulation = d3.forceSimulation(nodes)
+  .force("link", d3.forceLink(links).distance(120).strength(1))
+  .force("charge", d3.forceManyBody().strength(-400))
+  .force("center", d3.forceCenter(width/2, height/2));
+
+let dragging = false; // ← クリックと drag の競合防止
+
+const linkGroup = svg.append("g");
+const nodeGroup = svg.append("g");
+
+update();
+
+
+// =======================
+// 描画更新
+// =======================
+function update() {
+  // --- links ---
+  const link = linkGroup.selectAll("line")
+    .data(links).join("line")
+    .attr("stroke", "#999")
+    .attr("stroke-width", 2);
+
+  // --- nodes ---
+  const node = nodeGroup.selectAll("g")
+    .data(nodes)
+    .join(enter => {
+      const g = enter.append("g")
+        .call(d3.drag()
+          .on("start", dragStart)
+          .on("drag", draggingNode)
+          .on("end", dragEnd)
+        );
+
+      g.append("circle")
+        .attr("r", 28)
+        .attr("fill", "#50a0ff");
+
+      g.append("text")
+        .attr("text-anchor", "middle")
+        .attr("dy", 6)
+        .attr("fill", "#fff")
+        .text(d => d.text);
+
+      // dblclick: AI 連想追加
+      g.on("dblclick", async (event, d) => {
+        if (dragging) return; // drag のあとなら無視
+
+        const idea = await chatGPT(`${d.text} から連想できる単語を1つだけ出して`);
+        const newNode = {
+          id: nodeId++,
+          text: idea,
+          x: d.x + Math.random()*50,
+          y: d.y + Math.random()*50
+        };
+        nodes.push(newNode);
+        links.push({ source: d, target: newNode });
+        update();
+        simulation.nodes(nodes);
+        simulation.force("link").links(links);
+        simulation.alpha(1).restart();
+      });
+
+      return g;
+    });
+
+  simulation.on("tick", () => {
+    link
+      .attr("x1", d => d.source.x)
+      .attr("y1", d => d.source.y)
+      .attr("x2", d => d.target.x)
+      .attr("y2", d => d.target.y);
+
+    node
+      .attr("transform", d => `translate(${d.x}, ${d.y})`);
+  });
+}
+
+
+// =======================
+// Drag イベント
+// =======================
+function dragStart(event, d) {
+  dragging = true;
+  d.fx = d.x;
+  d.fy = d.y;
+}
+
+function draggingNode(event, d) {
+  d.fx = event.x;
+  d.fy = event.y;
+}
+
+// ドラッグ終了 → 説明文をサイドバーへ
+async function dragEnd(event, d) {
+  d.fx = null;
+  d.fy = null;
+
+  setTimeout(() => { dragging = false; }, 50); // dblclick 防止小細工
+
+  const desc = await chatGPT(`${d.text} とは何か、簡潔に説明して`);
+  document.getElementById("description").textContent = desc;
+}
+
+</script>
+</body>
+</html>
