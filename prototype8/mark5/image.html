@@ -16,7 +16,7 @@
   select { padding: 8px; border-radius: 4px; }
   .status { margin-top: 10px; color: #aaa; font-size: 0.9rem; white-space: pre-wrap; }
   #calibration-overlay { position: relative; }
-  .panel-front {flex: 0 0 260px;}
+  .panel-front {flex: 0 0 460px;}
   #canvas-front {width: 100%;height: auto;}
 
 </style>
@@ -45,6 +45,7 @@
     </div>
     <div class="controls">
       <button id="btn-calib-start" class="secondary">キャリブ開始(c)</button>
+      <button id="btn-recalib" class="secondary">再キャリブ (c)</button>
       <button id="btn-sample" class="primary">サンプリング(Space)</button>
       <button id="btn-train" class="secondary">学習実行(t)</button>
       <button id="btn-snap" class="secondary">スナップショット(s)</button>
@@ -128,6 +129,10 @@ const FISH_POINTS_RATIO = [
   [0.3, 0.6], [0.7, 0.6]
 ];
 const MIN_CALIB_POINTS = FISH_POINTS_RATIO.length;
+let calibrationData = [];
+// フレームカウンタ方式
+let frameCount = 0;
+const FISH_SKIP = 20; // 5フレームに1回
 
 // MediaPipe ID Definitions
 const ID_TOP = 10;
@@ -138,31 +143,6 @@ const LEFT_IRIS_IDX = [468, 469, 470, 471];
 const LEFT_EYE_OUTER = 33;
 const RIGHT_EYE_OUTER = 263;
 const LEFT_EYE_IDS = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246];
-
-function updateUI() {
-    const btnTrain = document.getElementById("btn-train");    // 学習
-    const btnSample = document.getElementById("btn-sample");  // サンプリング
-    const btnsnap = document.getElementById("btn-snap");      // スナップ
-
-    if (trainMode) {
-        btnTrain.style.display = "inline-block";
-    } else {
-        btnTrain.style.display = "none";
-    }
-    if (calibrationMode) {
-        //btnTrain.style.display = "none";
-        btnSample.style.display = "inline-block";
-    } else {
-        //btnTrain.style.display = "inline-block";
-        btnSample.style.display = "none";
-    }
-    if (snapMode){
-        btnsnap.style.display = "inline-block";
-    } else {
-        btnsnap.style.display = "none";
-    }
-
-}
 
 // ==========================================
 // IndexedDB 管理クラス
@@ -294,6 +274,34 @@ class StorageDB {
             const req = tx.objectStore("settings").get(key);
             req.onsuccess = () => resolve(req.result ? req.result.value : null);
         });
+    }
+}
+
+function updateUI() {
+    const btnTrain = document.getElementById("btn-train");     // 学習
+    const btnSample = document.getElementById("btn-sample");   // サンプリング
+    const btnSnap = document.getElementById("btn-snap");       // スナップ
+    const btnRecalib = document.getElementById("btn-recalib"); // 再キャリブ
+
+    if (trainMode) {
+        btnTrain.style.display = "inline-block";
+    } else {
+        btnTrain.style.display = "none";
+    }
+    if (calibrationMode) {
+        btnSample.style.display = "inline-block";
+    } else {
+        btnSample.style.display = "none";
+    }
+    if (snapMode){
+        btnSnap.style.display = "inline-block";
+    } else {
+        btnSnap.style.display = "none";
+    }
+    if (!trainMode && !calibrationMode && snapMode && calibrationData.length >= MIN_CALIB_POINTS) {
+        btnRecalib.style.display = "inline-block";
+    } else {
+        btnRecalib.style.display = "none";
     }
 }
 
@@ -486,10 +494,10 @@ function solveLeastSquares(A_data, Y_data, rows, cols) {
     }
 }
 
-function gaze3d_dir_to_fish(pt, dir, model) {
+function gaze3d_dir_to_fish(center, dir, model) {
     if (!model) return null;
 
-    const f = features_with_dir(pt, dir);
+    const f = features_with_dir(center, dir);
 
     let u = 0, v = 0;
     for (let i = 0; i < 7; i++) {
@@ -505,7 +513,6 @@ function gaze3d_dir_to_fish(pt, dir, model) {
 let db = new StorageDB();
 let faceMesh;
 let videoFront, videoFish, canvasFront, ctxFront, canvasFish, ctxFish;
-let calibrationData = [];
 let currentModel = null;
 let samplingBuffer = [];
 let snapBuffer = [];
@@ -518,6 +525,7 @@ let activeGazeDir = null;
 let activeEyeCenter = null; // L_C
 let activeIris3D    = null; // L_I
 let snapMode = false;
+calibrationData = [];
 updateUI();
 
 // フィルタ
@@ -834,10 +842,10 @@ async function onFaceResults(results) {
             const L_C = left_eye_center_offset;
             const L_I = left_iris_3d;
             
-            // 指定: gaze_vec = L_I - L_C (表示用)
+            // 指定: gaze_vec = L_I - L_C (視線ベクトル)
             const gaze_vec = Vec3.sub(L_I, L_C);
             //const dir = activeGazeDir;
-            // 指定: gaze_mark_vec = L_C - L_I (注視点用)
+            // 指定: gaze_mark_vec = L_C - L_I (注視点の表示)
             const gaze_mark_vec = Vec3.sub(L_C, L_I);
 
             if (Vec3.norm(gaze_vec) > 1e-6) {
@@ -867,20 +875,32 @@ async function onFaceResults(results) {
                 ctxFront.beginPath(); ctxFront.moveTo(C_2d[0], C_2d[1]); ctxFront.lineTo(E_2d[0], E_2d[1]); ctxFront.stroke();
                 
                 // グローバル更新
-                activeGaze3D = gaze_mark_end;
-                activeGazeDir = gaze_dir;
-                activeEyeCenter = L_C;
-                activeIris3D    = L_I;
+                activeGaze3D = gaze_mark_end;  // frontカメラでの視点の3次元座標
+                activeGazeDir = gaze_dir; // 視線ベクトル
+                activeEyeCenter = L_C;         // 眼球中心 の3次元座標
+                activeIris3D    = L_I;         // 虹彩中心 の3次元座標
                 // サンプリング処理
-                if(isSampling && activeGaze3D) {
-                    samplingBuffer.push(activeGaze3D);
-                    if(samplingBuffer.length>= SAMPLE_FRAMES) {
-                        finishSampling();
+                if (activeEyeCenter && activeGazeDir){
+                    // 推論時（リアルタイムと同じ場所）
+                    snapBuffer.push({
+                    eye: activeEyeCenter,
+                    dir: activeGazeDir
+                    });
+                    if(snapBuffer.length > 20) snapBuffer.shift();
+                    if(isSampling && Vec3.norm(activeGazeDir) > 0.9) {
+                        samplingBuffer.push({
+                                eye: activeEyeCenter,
+                                dir: activeGazeDir
+                            });
+                        if(samplingBuffer.length>= SAMPLE_FRAMES) {
+                            finishSampling();
+                        }
                     }
                 }
             }
         }
     }
+    if (isSampling){ console.log("サンプリング中");}
     ctxFront.restore();
 }
 
@@ -895,8 +915,8 @@ async function loop() {
         }
         await faceMesh.send({image: videoFront});
     }
-
-    if(!isSampling && videoFish.readyState >= 2){
+    frameCount++;
+    if(frameCount % FISH_SKIP === 0 && !isSampling && videoFish.readyState >= 2){
         // 魚眼側の描画
         if(canvasFish.width !== videoFish.videoWidth) {
             canvasFish.width = videoFish.videoWidth;
@@ -940,14 +960,9 @@ async function loop() {
             const gaze_vec = Vec3.sub(activeIris3D, activeEyeCenter);
             const dir = Vec3.normalize(gaze_vec);
 
-            const uv = gaze3d_dir_to_fish(activeGaze3D, activeGazeDir, currentModel);
+            const uv = gaze3d_dir_to_fish(activeEyeCenter, activeGazeDir, currentModel);
 
-            //displayBuffer.push(activeGaze3D);
             if(uv) {
-                // Buffer for smooth
-                snapBuffer.push(activeGaze3D);
-                if(snapBuffer.length > 20) snapBuffer.shift();
-
                 // 描画
                 const u = Math.max(0, Math.min(uv[0], canvasFish.width));
                 const v = Math.max(0, Math.min(uv[1], canvasFish.height));
@@ -958,7 +973,6 @@ async function loop() {
         }
         matFrame.delete(); // 使い終わったらメモリ解放
     }
-    if (isSampling){ console.log("サンプリング中");}
     requestAnimationFrame(loop);
 }
 
@@ -972,27 +986,34 @@ async function finishSampling() {
         console.log("Sampling failed (not enough frames)");
         return;
     }
-    // 中央値計算 (各軸)
+    // --- eye center median ---
     const len = samplingBuffer.length;
-    const med = [0,0,0];
+    const medEye = [0,0,0];
     for(let axis=0; axis<3; axis++) {
-        const sorted = samplingBuffer.map(p => p[axis]).sort((a,b)=>a-b);
-        med[axis] = sorted[Math.floor(len/2)];
+        const sorted = samplingBuffer
+            .map(s => s.eye[axis])
+            .sort((a,b)=>a-b);
+        medEye[axis] = sorted[Math.floor(len/2)];
     }
+
+    // --- gaze_dir mean ---
+    let sumDir = [0,0,0];
+    samplingBuffer.forEach(s => {
+        sumDir[0] += s.dir[0];
+        sumDir[1] += s.dir[1];
+        sumDir[2] += s.dir[2];
+    });
+    const meanDir = Vec3.normalize(sumDir);
     
     // ターゲット座標
     const pt = FISH_POINTS_RATIO[calibIndex];
     const tx = Math.floor(pt[0] * canvasFish.width);
     const ty = Math.floor(pt[1] * canvasFish.height);
 
-    // gaze_dir を必ず保存する
-    const gaze_vec = Vec3.sub(activeIris3D, activeEyeCenter);
-    const dir = Vec3.normalize(gaze_vec);
-
     // [X,Y,Z, dx,dy,dz, u,v]
     const data = [
-        med[0], med[1], med[2],
-        dir[0], dir[1], dir[2],
+        medEye[0], medEye[1], medEye[2],
+        meanDir[0], meanDir[1], meanDir[2],
         tx, ty
     ];
 
@@ -1176,8 +1197,6 @@ window.onload = async () => {
             console.error(e);
         }
     });
-
-    //document.getElementById('btn-start').onclick = startApp;
     
     document.getElementById('btn-calib-start').onclick = () => {
         calibrationMode = true;
@@ -1185,6 +1204,27 @@ window.onload = async () => {
         calibIndex = 0;
         updateUI();
         console.log("calibrationData.length:", calibrationData.length);
+    };
+
+    document.getElementById('btn-recalib').onclick = async () => {
+        if (!confirm("キャリブレーションを最初からやり直しますか？")) return;
+
+        calibrationData = [];
+        samplingBuffer = [];
+        snapBuffer = [];
+        currentModel = null;
+
+        calibIndex = 0;
+        calibrationMode = true;
+        trainMode = false;
+        snapMode = false;
+        isSampling = false;
+
+        await db.clearCalibrationOnly(); // calibration / model / snapshots を削除
+
+        updateUI();
+
+        console.log("Re-calibration started.");
     };
 
     // --- スナップショットボタン ---
@@ -1201,10 +1241,33 @@ window.onload = async () => {
             return; 
         }
         
-        let sum = [0,0,0];
-        for(let p of snapBuffer) { sum[0]+=p[0]; sum[1]+=p[1]; sum[2]+=p[2]; }
-        const mean3d = [sum[0]/snapBuffer.length, sum[1]/snapBuffer.length, sum[2]/snapBuffer.length];
-        const uv = gaze3d_dir_to_fish(mean3d, activeGazeDir, currentModel);
+        let sumEye = [0,0,0];
+        let sumDir = [0,0,0];
+
+        for(let s of snapBuffer){
+        sumEye[0] += s.eye[0];
+        sumEye[1] += s.eye[1];
+        sumEye[2] += s.eye[2];
+
+        sumDir[0] += s.dir[0];
+        sumDir[1] += s.dir[1];
+        sumDir[2] += s.dir[2];
+        }
+
+        const meanEye = [
+        sumEye[0]/snapBuffer.length,
+        sumEye[1]/snapBuffer.length,
+        sumEye[2]/snapBuffer.length
+        ];
+
+        const meanDir = Vec3.normalize([
+        sumDir[0]/snapBuffer.length,
+        sumDir[1]/snapBuffer.length,
+        sumDir[2]/snapBuffer.length
+        ]);
+
+        const uv = gaze3d_dir_to_fish(meanEye, meanDir, currentModel);
+
 
         if(uv) {
             // --- 編集初期値 ---
@@ -1234,7 +1297,7 @@ window.onload = async () => {
             // ======== ログ出力 ========
             console.group("📸 Snapshot Triggered");
             console.log("snapBuffer length:", snapBuffer.length);
-            console.log("mean3d:", mean3d.map(v => v.toFixed(4)));
+            console.log("meanEye:", meanEye);
             console.log("gaze uv (fish):", `u=${uv[0]}, v=${uv[1]}`);
             console.log("editGazeUV:", editGazeUV);
             console.log("offsetUV:", offsetUV);
@@ -1331,7 +1394,8 @@ window.onload = async () => {
         if(e.key === " " || e.key === "Enter") triggerSample();
         if(e.key === "t") triggerTrain();
         if(e.key === "s") triggerSnap();
-        if(e.key === "c") document.getElementById('btn-calib-start').click();
+        if(e.key === "c") document.getElementById('btn-recalib').click();
+        if(e.key === "a") document.getElementById('btn-calib-start').click();
     });
     
     // サンプリング (Space / Enter)
