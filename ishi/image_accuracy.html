@@ -147,8 +147,8 @@ const LEFT_EYE_IDS = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 1
 // ================================
 // 性能評価用データ
 // ================================
-let evalPredictions = []; // 推定注視点
-let evalGroundTruths = []; // 正解注視点
+let evalResults = []
+let maxError = 0;
 
 const TEST_POINT = 1
 let TEST_TX = 0
@@ -1326,10 +1326,39 @@ window.onload = async () => {
             console.log("image editImageData src length:", editImageData.src.length);
             console.log("canvasFish size:", canvasFish.width, "x", canvasFish.height);
             console.groupEnd();
+            // =========================
+
+            // ======== 精度関係 =========
+            evalResults.push({
+                gt:   { u: TEST_TX, v: TEST_TY },   // 見せた注視点
+                pred: { u: uv[0],   v: uv[1] }       // 推定された注視点
+            });
+
+            const last = evalResults[evalResults.length - 1];
+            const dx = last.pred.u - last.gt.u;
+            const dy = last.pred.v - last.gt.v;
+            const error = Math.sqrt(dx * dx + dy * dy);
+
+            // 累積評価
+            let sumError = 0;
+            evalResults.forEach((r) => {
+                const sumdx = r.pred.u - r.gt.u;
+                const sumdy = r.pred.v - r.gt.v;
+                sumError += Math.sqrt(sumdx * sumdx + sumdy * sumdy);
+                if (e > maxError) maxError = e;
+            });
+
+            const meanError = sumError / evalResults.length;
+
 
             console.group("evalResults!!!!!!!!!!!");
-            console.log(`x=${TEST_TX}, y=${TEST_TY}`);
-            console.log(`x=${uv[0]}, y=${uv[1]}`);
+            console.log(
+                `#${evalResults.length}`,
+                `error=${error.toFixed(2)} px`,
+                `meanError=${meanError.toFixed(2)} px`,
+                `maxError=${maxError.toFixed(2)} px`
+            );
+            console.log(evalResults);
             console.groupEnd();
             // ==========================
         }
