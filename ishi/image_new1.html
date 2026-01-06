@@ -133,6 +133,7 @@ let calibrationData = [];
 // フレームカウンタ方式
 let frameCount = 0;
 const FISH_SKIP = 20; // 5フレームに1回
+const DIM = 13;
 
 // MediaPipe ID Definitions
 const ID_TOP = 10;
@@ -413,7 +414,7 @@ function train_model_from_calib(calib_list) {
         const pt  = [c[0], c[1], c[2]];
         const dir = [c[3], c[4], c[5]];
 
-        const feat = features_with_dir(pt, dir); // ← 7次
+        const feat = features_with_dir(pt, dir); // ← 13次
 
         for (let v of feat) features.push(v);
 
@@ -421,8 +422,8 @@ function train_model_from_calib(calib_list) {
         Y_v.push(c[7]);
     }
 
-    const coef_u = solveLeastSquares(features, Y_u, N, 7);
-    const coef_v = solveLeastSquares(features, Y_v, N, 7);
+    const coef_u = solveLeastSquares(features, Y_u, N, DIM);
+    const coef_v = solveLeastSquares(features, Y_v, N, DIM);
 
     return { coef_u, coef_v };
 }
@@ -434,7 +435,9 @@ function features_with_dir(pt, dir) {
     return [
         1.0,
         x, y, z,
-        dx, dy, dz
+        dx, dy, dz,
+        x*x, y*y, z*z,
+        x*dx, y*dy, z*dz,
     ];
 }
 
@@ -500,7 +503,7 @@ function gaze3d_dir_to_fish(center, dir, model) {
     const f = features_with_dir(center, dir);
 
     let u = 0, v = 0;
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < f.length; i++) {
         u += f[i] * model.coef_u[i];
         v += f[i] * model.coef_v[i];
     }
