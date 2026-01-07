@@ -323,7 +323,7 @@
   window.addEventListener('resize', () => {
     svg.attr('width', getW()).attr('height', getH());
     simulation.force('center', d3.forceCenter(getW() / 2, getH() / 2));
-  }
+  })
   // 🔹 親ページへ送信
   parent.postMessage({
     type: 'IDEA_RESULT',
