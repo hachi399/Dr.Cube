@@ -243,6 +243,7 @@
 
       const overlay = document.createElement("div");
       overlay.className = "swipe-layer";
+      overlay.dataset.cardType = card.type;
       el.appendChild(overlay);
 
       let startX = 0;
@@ -265,20 +266,28 @@
 
     /* ===== render（表示制御のみ） ===== */
     function render() {
-      cardMap.forEach(v => {
-        v.el.classList.remove("visible");
-      });
+  cardMap.forEach(v => {
+    v.el.classList.remove("visible");
+  });
 
-      getVisibleIndices().forEach(i => {
-        const card = deck[i];
-        const entry = cardMap.get(card.id);
-        if (entry) {
-          entry.el.classList.add("visible");
-          entry.overlay.style.pointerEvents =
-            overlayEnabled ? "auto" : "none";
-        }
-      });
+  getVisibleIndices().forEach(i => {
+    const card = deck[i];
+    const entry = cardMap.get(card.id);
+    if (!entry) return;
+
+    entry.el.classList.add("visible");
+
+    // ★ imageカードは swipe-layer を完全に無効化
+    if (card.type === 'image') {
+      entry.overlay.style.display = "none";
+    } else {
+      entry.overlay.style.display = "block";
+      entry.overlay.style.pointerEvents =
+        overlayEnabled ? "auto" : "none";
     }
+  });
+}
+
 
     /* ===== swipe ===== */
     function handleSwipe(dist, index) {
