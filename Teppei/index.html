@@ -137,6 +137,11 @@
   };
 }
 
+    function showSuccessAlert(msg){
+  alert("保存成功");
+}
+
+
     function broadcastUpdate(data) {
   document.querySelectorAll('iframe').forEach(ifr => {
     if (
@@ -326,6 +331,11 @@
     /* ===== 初期化 ===== */
     deck.forEach(createCard);
     render();
+
+    const leftBtn = document.getElementById("leftBtn");
+    const rightBtn = document.getElementById("rightBtn");
+    const toggleIframeInteraction =
+    document.getElementById("toggleIframeInteraction");
 
     /* ===== controls ===== */
     leftBtn.onclick = () => {
