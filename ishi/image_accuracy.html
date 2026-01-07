@@ -132,7 +132,7 @@ const MIN_CALIB_POINTS = FISH_POINTS_RATIO.length;
 let calibrationData = [];
 // フレームカウンタ方式
 let frameCount = 0;
-const FISH_SKIP = 0; // 5フレームに1回
+const FISH_SKIP = 50; // 50フレームに1回
 
 // MediaPipe ID Definitions
 const ID_TOP = 10;
@@ -150,7 +150,7 @@ const LEFT_EYE_IDS = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 1
 let evalResults = []
 let maxError = 0;
 
-const TEST_POINT = 1
+let TEST_POINT = 0
 let TEST_TX = 0
 let TEST_TY = 0
 
@@ -969,7 +969,7 @@ async function loop() {
 
             ctxFish.fillStyle = "green";
             ctxFish.beginPath(); ctxFish.arc(TEST_TX, TEST_TY, 20, 0, 2*Math.PI); ctxFish.fill();
-            ctxFidh.fillText(`x=${TEST_TX}, y=${TEST_TY}`, 30, 70);
+            ctxFish.fillText(`x=${TEST_TX}, y=${TEST_TY}`, 30, 70);
 
             // 推論モード
             ctxFish.fillStyle = "lime";
@@ -1315,6 +1315,7 @@ window.onload = async () => {
                 matFrame.delete(); // メモリ解放
             };
 
+            /***
             // ======== ログ出力 ========
             console.group("📸 Snapshot Triggered");
             console.log("snapBuffer length:", snapBuffer.length);
@@ -1327,6 +1328,7 @@ window.onload = async () => {
             console.log("canvasFish size:", canvasFish.width, "x", canvasFish.height);
             console.groupEnd();
             // =========================
+            ***/
 
             // ======== 精度関係 =========
             evalResults.push({
@@ -1344,7 +1346,8 @@ window.onload = async () => {
             evalResults.forEach((r) => {
                 const sumdx = r.pred.u - r.gt.u;
                 const sumdy = r.pred.v - r.gt.v;
-                sumError += Math.sqrt(sumdx * sumdx + sumdy * sumdy);
+                const e = Math.sqrt(sumdx * sumdx + sumdy * sumdy);
+                sumError += e;
                 if (e > maxError) maxError = e;
             });
 
@@ -1360,6 +1363,8 @@ window.onload = async () => {
             );
             console.log(evalResults);
             console.groupEnd();
+            
+            TEST_POINT = (TEST_POINT + 1) % MIN_CALIB_POINTS; // 割った時のあまりから値を決める
             // ==========================
         }
     };
