@@ -308,17 +308,20 @@
     }
     //カード生成時に呼び出す関数
     async function notifyChildrenWithDB() {
-      const allData = await loadAllFromDB();
+  const allData = await loadAllFromDB();
 
-      document.querySelectorAll('iframe').forEach(ifr => {
-        if (ifr.dataset.cardType === 'analysis' || ifr.dataset.cardType === 'idea')
-          ifr.contentWindow.postMessage(
-            { type: 'DB_UPDATE', payload: allData },
-            location.origin
-          );
-        }
-      });
+  document.querySelectorAll('iframe').forEach(ifr => {
+    if (
+      ifr.dataset.cardType === 'analysis' ||
+      ifr.dataset.cardType === 'idea'
+    ) {
+      ifr.contentWindow.postMessage(
+        { type: 'DB_UPDATE', payload: allData },
+        location.origin
+      );
     }
+  });
+}
 
     /* ===== 初期化 ===== */
     deck.forEach(createCard);
