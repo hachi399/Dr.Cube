@@ -227,7 +227,10 @@ function render(){
     if(entry){
       entry.el.classList.add("visible");
       entry.overlay.style.pointerEvents =
-        overlayEnabled ? "auto" : "none";
+        (overlayEnabled && card.type !== 'image')
+          ? "auto"
+          : "none";
+      
     }
   });
 }
