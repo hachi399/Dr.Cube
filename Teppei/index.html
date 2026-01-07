@@ -116,39 +116,40 @@
       });
     }
 
-    function saveResult(data) {
-      function saveResult(data, sourceWindow) {
-        const tx = db.transaction(STORE, 'readwrite');
-        const store = tx.objectStore(STORE);
+    function saveResult(data, sourceWindow) {
+  const tx = db.transaction(STORE, 'readwrite');
+  const store = tx.objectStore(STORE);
 
-        store.add({ time: Date.now(), data });
+  store.add({ time: Date.now(), data });
 
-        tx.oncomplete = () => {
-          sourceWindow?.postMessage(
-            { type: 'SAVE_SUCCESS', payload: data },
-            location.origin
-          );
-        };
+  tx.oncomplete = () => {
+    sourceWindow?.postMessage(
+      { type: 'SAVE_SUCCESS', payload: data },
+      location.origin
+    );
+  };
 
-        tx.onerror = () => {
-          sourceWindow?.postMessage(
-            { type: 'SAVE_ERROR', error: 'IndexedDB error' },
-            location.origin
-          );
-        };
-      }
-    }
+  tx.onerror = () => {
+    sourceWindow?.postMessage(
+      { type: 'SAVE_ERROR', error: 'IndexedDB error' },
+      location.origin
+    );
+  };
+}
 
     function broadcastUpdate(data) {
-      document.querySelectorAll('iframe').forEach(ifr => {
-        if (ifr.dataset.cardType === 'analysis' || ifr.dataset.cardType === 'idea')
-          ifr.contentWindow.postMessage(
-            { type: 'DB_UPDATE', payload: data },
-            location.origin
-          );
-        }
-      });
+  document.querySelectorAll('iframe').forEach(ifr => {
+    if (
+      ifr.dataset.cardType === 'analysis' ||
+      ifr.dataset.cardType === 'idea'
+    ) {
+      ifr.contentWindow.postMessage(
+        { type: 'DB_UPDATE', payload: data },
+        location.origin
+      );
     }
+  });
+}
 
     window.addEventListener('message', event => {
       if (event.origin !== location.origin) return;
