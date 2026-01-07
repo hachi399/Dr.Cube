@@ -59,280 +59,277 @@
   --------------------------------------------------- */
 
   let nodes = [];
-let links = [];
-let idCounter = 0;
-let selectedNode = null;
-let statusEL = null;
-const svg = d3.select('#graph');
-const tooltip = d3.select('#tooltip');
-const getW = () => window.innerWidth;
-const getH = () => window.innerHeight;
-//背景
-const defs = svg.append('defs');
-const bgGradient = defs.append('linearGradient')
+  let links = [];
+  let idCounter = 0;
+  let selectedNode = null;
+  let statusEL = null;
+  const svg = d3.select('#graph');
+  const tooltip = d3.select('#tooltip');
+  const getW = () => window.innerWidth;
+  const getH = () => window.innerHeight;
+  //背景
+  const defs = svg.append('defs');
+  const bgGradient = defs.append('linearGradient')
   .attr('id', 'bg-gradient')
   .attr('x1', '0%')
   .attr('y1', '0%')
   .attr('x2', '100%')
   .attr('y2', '100%');
-bgGradient.append('stop')
+  bgGradient.append('stop')
   .attr('offset', '0%')
   .attr('stop-color', '#fff');
-bgGradient.append('stop')
+  bgGradient.append('stop')
   .attr('offset', '100%')
   .attr('stop-color', '#DB8D67');
-svg.insert('rect', ':first-child')
+  svg.insert('rect', ':first-child')
   .attr('width', getW())
   .attr('height', getH())
   .attr('fill', 'url(#bg-gradient)');
-// レイアウトパラメータ
-const LINK_PARENT_CHILD = 45;
-const LINK_CHILD_GRAND = 60;
-// 力学レイアウト（全体をやや密に保つ）
-const simulation = d3.forceSimulation()
-  .force('link', d3.forceLink().id(d => d.id).distance(link => {
-    const sDepth = (link && link.source && typeof link.source.depth === 'number') ? link.source.depth : 0;
-    const tDepth = (link && link.target && typeof link.target.depth === 'number') ? link.target.depth : 1;
-    return (sDepth === 0 && tDepth === 1) ? LINK_PARENT_CHILD : LINK_CHILD_GRAND;
-  }))
-  .force('charge', d3.forceManyBody().strength(-80))
-  .force('center', d3.forceCenter(getW() / 2, getH() / 2))
-  .force('collision', d3.forceCollide(22))
-  .on('tick', ticked);
-const linkG = svg.append('g').attr('class', 'links');
-const nodeG = svg.append('g').attr('class', 'nodes');
-function makeId() { return 'n' + (++idCounter); }
-function findNodeById(id) { return nodes.find(n => n.id === id); }
-//ノード操作並びIndexedDB保存
-const nodeDrag = d3.drag()
-  .on('start', (event, d) => {
-    if (d.depth === 0) return;
-    simulation.alphaTarget(0.3).restart();
-    d.fx = d.x;
-    d.fy = d.y;
-  })
-  .on('drag', (event, d) => {
-    if (d.depth === 0) return;
-    d.fx = event.x;
-    d.fy = event.y;
-  })
-  .on('end', (event, d) => {
-    if (d.depth === 0) return;
-    d.fx = null;
-    d.fx = null;
-    simulation.alphaTarget(0);
-    selectNode(d);
-    sendNodeSelection(d);
-  });
-function sendNodeSelection(d) {
-  showStatus('Saving...', '#3498b');
-  window.parent.postMessage(
-    {
-      type: 'ANALYSIS_RESULT',
-      payload: {
-        kind: 'node-select',
-        id: d.id,
-        name: d.name,
-        depth: d.depth,
-        x: d.x,
-        y: d.y,
-        time: Date.now()
-      }
-    },
-    location.origin
-  );
-}
-function showSuccessAlert(data) {
-  window.addEventListener('message', event => {
-    if (event.origin !== location.origin) return;
-    const { type, payload, error } = event.data || {};
-    if (type === 'SAVE_SUCCESS') {
-      showStatus(`✔ 保存しました：${payload.name}`, '#2ecc71');
-      hideStatus();
-    }
-    if (type === 'SAVE_ERROR') {
-      showStatus(`✖ 保存に失敗しました`, '#e74c3c');
-      hideStatus(2000);
-    }
-  });
-}
-function showStatus(text, bg = '#555') {
-  if (!statusEl) {
-    statusEl = document.createElement('div');
-    statusEl.style.cssText = `
-  position:fixed;
-  bottom:20px;
-  right:20px;
-  padding:10px 14px;
-  border-radius:8px;
-  color:#fff;
-  font-size:13px;
-  z-index:9999;
-  box-shadow:0 6px 18px rgba(0,0,0,.25);
-  transition:opacity .2s;
-`;
-    document.body.appendChild(statusEl);
-  }
-  statusEl.textContent = text;
-  statusEl.style.background = bg;
-  statusEl.style.opacity = '1';
-}
-function hideStatus(delay = 1200) {
-  if (!statusEl) return;
-  setTimeout(() => {
-    statusEl.style.opacity = '0';
-  }, delay);
-}
-//ノード選択処理
-function selectNode(d) {
-  selectedNode = d;
-  nodeG.selectAll('g.node circle')
-    .attr('stroke', n => n === d ? '#ff3b00' : '#e6a86b')
-    .attr('stroke-width', n => n === d ? 4 : 2);
-}
-// API キー（ブラウザに直接埋める場合は注意）
-// Render のバックエンドURL（API キーはサーバー側で管理）
-const API_URL = "https://dr-cube-1.onrender.com/chat";
-// 汎用: 指定数を返す fetchWords(word, count)
-async function fetchWords(word, count = 6) {
-  try {
-    const res = await fetch(API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
+  // レイアウトパラメータ
+  const LINK_PARENT_CHILD = 45;
+  const LINK_CHILD_GRAND = 60;
+  // 力学レイアウト（全体をやや密に保つ）
+  const simulation = d3.forceSimulation()
+    .force('link', d3.forceLink().id(d => d.id).distance(link => {
+      const sDepth = (link && link.source && typeof link.source.depth === 'number') ? link.source.depth : 0;
+      const tDepth = (link && link.target && typeof link.target.depth === 'number') ? link.target.depth : 1;
+      return (sDepth === 0 && tDepth === 1) ? LINK_PARENT_CHILD : LINK_CHILD_GRAND;
+    }))
+    .force('charge', d3.forceManyBody().strength(-80))
+    .force('center', d3.forceCenter(getW() / 2, getH() / 2))
+    .force('collision', d3.forceCollide(22))
+    .on('tick', ticked);
+  const linkG = svg.append('g').attr('class', 'links');
+  const nodeG = svg.append('g').attr('class', 'nodes');
+  function makeId() { return 'n' + (++idCounter); }
+  function findNodeById(id) { return nodes.find(n => n.id === id); }
+  //ノード操作並びIndexedDB保存
+  const nodeDrag = d3.drag()
+    .on('start', (event, d) => {
+      if (d.depth === 0) return;
+      simulation.alphaTarget(0.3).restart();
+      d.fx = d.x;
+      d.fy = d.y;
+    })
+    .on('drag', (event, d) => {
+      if (d.depth === 0) return;
+      d.fx = event.x;
+      d.fy = event.y;
+    })
+    .on('end', (event, d) => {
+      if (d.depth === 0) return;
+      d.fx = null;
+      d.fx = null;
+      simulation.alphaTarget(0);
+      selectNode(d);
+      sendNodeSelection(d);
+    });
+  function sendNodeSelection(d) {
+    showStatus('Saving...', '#3498b');
+    window.parent.postMessage( 
+      {
+        type: 'ANALYSIS_RESULT',
+        payload: {
+          kind: 'node-select',
+          id: d.id,
+          name: d.name,
+          depth: d.depth,
+          x: d.x,
+          y: d.y,
+          time: Date.now()
+        }
       },
-      body: JSON.stringify({
-        message: `「${word}」から連想される短い単語を${count}つ、日本語で出してください。出力は単語のみ、改行かカンマで区切ってください。より突飛な連想でよろしく`
-      })
-    });
-    const json = await res.json();
-    let text = '';
-    // Render のレスポンス形式に合わせて抽出
-    if (json.reply && typeof json.reply === 'string') {
-      text = json.reply;
-    } else if (json.message && typeof json.message === 'string') {
-      text = json.message;
-    } else if (json.text && typeof json.text === 'string') {
-      text = json.text;
-    }
-    if (!text) return [];
-    const parts = String(text).split(/[,\u3001\n]+/).map(s => s.trim()).filter(Boolean);
-    return parts.slice(0, count);
-  } catch (err) {
-    console.error('fetchWords error', err);
-    return [];
+      location.origin
+    );
   }
-}
-// 連想理由取得
-async function fetchReason(a, b) {
-  try {
-    const prompt = '次の2つの概念「' + a + '」と「' + b + '」の関連性を、因果・機能・共通性・背景などを踏まえて日本語で2〜3行にまとめてください。簡潔にお願いします。';
-    const res = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: prompt })
-    });
-    const json = await res.json();
-    let text = '';
-    if (json.reply && typeof json.reply === 'string') text = json.reply;
-    else if (json.message && typeof json.message === 'string') text = json.message;
-    else if (json.text && typeof json.text === 'string') text = json.text;
-    return (text && text.trim()) ? text.trim() : (a + ' と ' + b + ' の関連');
-  } catch (e) {
-    console.error('fetchReason', e);
-    return a + ' → ' + b + ' の関連';
-  }
-}
-// addNode: depth 0=親,1=子,2=孫
-function addNode(name, parentId = null, depth = 0) {
-  const n = { id: makeId(), name, depth };
-  let px = getW() / 2, py = getH() / 2;
-  if (parentId) { const p = findNodeById(parentId); if (p && typeof p.x === 'number') { px = p.x; py = p.y; } }
-  const ang = Math.random() * Math.PI * 2;
-  const baseDist = parentId ? 40 : 20;
-  n.x = px + Math.cos(ang) * baseDist;
-  n.y = py + Math.sin(ang) * baseDist;
-  if (depth === 0) {
-    n.fx = n.x;
-    n.fy = n.y;
-  }
-  nodes.push(n);
-  if (parentId) {
-    const pNode = findNodeById(parentId);
-    const linkObj = { id: 'l' + links.length, source: pNode, target: n, reason: '連想理由を生成中...' };
-    links.push(linkObj);
-    fetchReason(pNode.name, n.name).then(r => { linkObj.reason = r || `${pNode.name} → ${n.name}`; });
-  }
-  return n;
-}
-function restart() {
-  const linkSel = linkG.selectAll('g.link').data(links, d => d.id);
-  linkSel.exit().remove();
-  const linkEnter = linkSel.enter().append('g').attr('class', 'link');
-  linkEnter.append('line').attr('class', 'hit').attr('stroke', 'transparent').attr('stroke-width', 20);
-  linkEnter.append('line').attr('class', 'visible').attr('stroke', '#bfbfbf').attr('stroke-width', 2);
-  const linkMerge = linkEnter.merge(linkSel);
-  linkMerge.on('mouseover', (event, d) => { tooltip.style('display', 'block').text(d.reason || ''); })
-    .on('mousemove', event => { tooltip.style('left', (event.pageX + 12) + 'px').style('top', (event.pageY + 12) + 'px'); })
-    .on('mouseout', () => { tooltip.style('display', 'none'); });
-  const nodeSel = nodeG.selectAll('g.node').data(nodes, d => d.id);
-  nodeSel.exit().remove();
-  const nodeEnter = nodeSel.enter().append('g').attr('class', 'node').call(nodeDrag);
-  nodeEnter.append('circle').attr('r', d => d.dept === 0 ? 20 : 16).attr('fill', d => d.depth === 0 ? '#ffd703' : '#ffdca8').attr('stroke', '#e6a86b').attr('stroke-width', 2);
-  nodeEnter.append('text').attr('dy', 4).attr('text-anchor', 'middle').style('font-size', '11px').text(d => d.name);
-  simulation.nodes(nodes);
-  simulation.force('link').links(links);
-  simulation.alpha(0.9).restart();
-}
-function ticked() {
-  nodeG.selectAll('g.node').attr('transform', d => `translate(${d.x},${d.y})`);
-  linkG.selectAll('g.link').each(function (d) {
-    d3.select(this).select('line.hit').attr('x1', d.source.x).attr('y1', d.source.y).attr('x2', d.target.x).attr('y2', d.target.y);
-    d3.select(this).select('line.visible').attr('x1', d.source.x).attr('y1', d.source.y).attr('x2', d.target.x).attr('y2', d.target.y);
-  });
-}
-// ボタン処理
-document.getElementById('addSeedBtn').addEventListener('click', async () => {
-  const seed = document.getElementById('seedInput').value.trim();
-  if (!seed) { alert('親ノード名を入力してください'); return; }
-  const btn = document.getElementById('addSeedBtn');
-  btn.disabled = true;
-  btn.textContent = '生成中...';
-  try {
-    nodes = []; links = []; idCounter = 0; restart();
-    const parent = addNode(seed, null, 0);
-    restart();
-    const childWords = await fetchWords(seed, 6);
-    while (childWords.length < 6) childWords.push(seed + '_child');
-    for (const c of childWords) {
-      const child = addNode(c, parent.id, 1);
-      restart();
-      await new Promise(r => setTimeout(r, 80));
-      const grandWords = await fetchWords(c, 3);
-      while (grandWords.length < 3) grandWords.push(c + '_grand');
-      for (const g of grandWords) {
-        addNode(g, child.id, 2);
+  function showSuccessAlert(data) {
+    window.addEventListener('message', event => {
+      if (event.origin !== location.origin) return;
+      const { type, payload, error } = event.data || {};
+      if (type === 'SAVE_SUCCESS') {
+        showStatus(`✔ 保存しました：${payload.name}`, '#2ecc71');
+        hideStatus();
       }
-      restart();
-    }
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '生成（親→子6→孫3×6）';
-    document.getElementById('seedInput').value = '';
+      if (type === 'SAVE_ERROR') {
+        showStatus(`✖ 保存に失敗しました`, '#e74c3c');
+        hideStatus(2000);
+      }
+    });
   }
-});
-// レスポンシブ
-window.addEventListener('resize', () => {
-  svg.attr('width', getW()).attr('height', getH());
-  simulation.force('center', d3.forceCenter(getW() / 2, getH() / 2));
- 
+  function showStatus(text, bg = '#555') {
+    if (!statusEl) {
+      statusEl = document.createElement('div');
+      statusEl.style.cssText = `
+        position:fixed;
+        bottom:20px;
+        right:20px;
+        padding:10px 14px;
+        border-radius:8px;
+        color:#fff;
+        font-size:13px;
+        z-index:9999;
+        box-shadow:0 6px 18px rgba(0,0,0,.25);
+        transition:opacity .2s;
+      `;
+      document.body.appendChild(statusEl);
+    }
+    statusEl.textContent = text;
+    statusEl.style.background = bg;
+    statusEl.style.opacity = '1';
+  }
+  function hideStatus(delay = 1200) {
+    if (!statusEl) return;
+    setTimeout(() => {
+      statusEl.style.opacity = '0';
+    }, delay);
+  }
+  //ノード選択処理
+  function selectNode(d) {
+    selectedNode = d;
+    nodeG.selectAll('g.node circle')
+      .attr('stroke', n => n === d ? '#ff3b00' : '#e6a86b')
+      .attr('stroke-width', n => n === d ? 4 : 2);
+  }
+  // API キー（ブラウザに直接埋める場合は注意）
+  // Render のバックエンドURL（API キーはサーバー側で管理）
+  const API_URL = "https://dr-cube-1.onrender.com/chat";
+  // 汎用: 指定数を返す fetchWords(word, count)
+  async function fetchWords(word, count = 6) {
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+                 body: JSON.stringify({
+                   message: `「${word}」から連想される短い単語を${count}つ、日本語で出してください。出力は単語のみ、改行かカンマで区切ってください。より突飛な連想でよろしく`
+                 })
+      });
+      const json = await res.json();
+      let text = '';
+      // Render のレスポンス形式に合わせて抽出
+      if (json.reply && typeof json.reply === 'string') {
+        text = json.reply;
+      } else if (json.message && typeof json.message === 'string') {
+        text = json.message;
+      } else if (json.text && typeof json.text === 'string') {
+        text = json.text;
+      }
+      if (!text) return [];
+      const parts = String(text).split(/[,\u3001\n]+/).map(s => s.trim()).filter(Boolean);
+      return parts.slice(0, count);
+    } catch (err) {
+      console.error('fetchWords error', err);
+      return [];
+    }
+  }
+  // 連想理由取得
+  async function fetchReason(a, b) {
+    try {
+      const prompt = '次の2つの概念「' + a + '」と「' + b + '」の関連性を、因果・機能・共通性・背景などを踏まえて日本語で2〜3行にまとめてください。簡潔にお願いします。';
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify({ message: prompt })
+      });
+      const json = await res.json();
+      let text = '';
+      if (json.reply && typeof json.reply === 'string') text = json.reply;
+      else if (json.message && typeof json.message === 'string') text = json.message;
+      else if (json.text && typeof json.text === 'string') text = json.text;
+      return (text && text.trim()) ? text.trim() : (a + ' と ' + b + ' の関連');
+    } catch (e) {
+      console.error('fetchReason', e);
+      return a + ' → ' + b + ' の関連';
+    }
+  }
+  // addNode: depth 0=親,1=子,2=孫
+  function addNode(name, parentId = null, depth = 0) {
+    const n = { id: makeId(), name, depth };
+    let px = getW() / 2, py = getH() / 2;
+    if (parentId) { const p = findNodeById(parentId); if (p && typeof p.x === 'number') { px = p.x; py = p.y; } }
+    const ang = Math.random() * Math.PI * 2;
+    const baseDist = parentId ? 40 : 20;
+    n.x = px + Math.cos(ang) * baseDist;
+    n.y = py + Math.sin(ang) * baseDist;
+    if (depth === 0) {
+      n.fx = n.x;
+      n.fy = n.y;
+    }
+    nodes.push(n);
+    if (parentId) {
+      const pNode = findNodeById(parentId);
+      const linkObj = { id: 'l' + links.length, source: pNode, target: n, reason: '連想理由を生成中...' };
+      links.push(linkObj);
+      fetchReason(pNode.name, n.name).then(r => { linkObj.reason = r || `${pNode.name} → ${n.name}`; });
+    }
+    return n;
+  }
+  function restart() {
+    const linkSel = linkG.selectAll('g.link').data(links, d => d.id);
+    linkSel.exit().remove();
+    const linkEnter = linkSel.enter().append('g').attr('class', 'link');
+    linkEnter.append('line').attr('class', 'hit').attr('stroke', 'transparent').attr('stroke-width', 20);
+    linkEnter.append('line').attr('class', 'visible').attr('stroke', '#bfbfbf').attr('stroke-width', 2);
+    const linkMerge = linkEnter.merge(linkSel);
+    linkMerge.on('mouseover', (event, d) => { tooltip.style('display', 'block').text(d.reason || ''); })
+      .on('mousemove', event => { tooltip.style('left', (event.pageX + 12) + 'px').style('top', (event.pageY + 12) + 'px'); })
+      .on('mouseout', () => { tooltip.style('display', 'none'); });
+    const nodeSel = nodeG.selectAll('g.node').data(nodes, d => d.id);
+    nodeSel.exit().remove();
+    const nodeEnter = nodeSel.enter().append('g').attr('class', 'node').call(nodeDrag);
+    nodeEnter.append('circle').attr('r', d => d.dept === 0 ? 20 : 16).attr('fill', d => d.depth === 0 ? '#ffd703' : '#ffdca8').attr('stroke', '#e6a86b').attr('stroke-width', 2);
+    nodeEnter.append('text').attr('dy', 4).attr('text-anchor', 'middle').style('font-size', '11px').text(d => d.name);
+    simulation.nodes(nodes);
+    simulation.force('link').links(links);
+    simulation.alpha(0.9).restart();
+  }
+  function ticked() {
+    nodeG.selectAll('g.node').attr('transform', d => `translate(${d.x},${d.y})`);
+    linkG.selectAll('g.link').each(function (d) {
+      d3.select(this).select('line.hit').attr('x1', d.source.x).attr('y1', d.source.y).attr('x2', d.target.x).attr('y2', d.target.y);
+      d3.select(this).select('line.visible').attr('x1', d.source.x).attr('y1', d.source.y).attr('x2', d.target.x).attr('y2', d.target.y);
+    });
+  }
+  // ボタン処理
+  document.getElementById('addSeedBtn').addEventListener('click', async () => {
+    const seed = document.getElementById('seedInput').value.trim();
+    if (!seed) { alert('親ノード名を入力してください'); return; }
+    const btn = document.getElementById('addSeedBtn');
+    btn.disabled = true;
+    btn.textContent = '生成中...';
+    try {
+      nodes = []; links = []; idCounter = 0; restart();
+      const parent = addNode(seed, null, 0);
+      restart();
+      const childWords = await fetchWords(seed, 6);
+      while (childWords.length < 6) childWords.push(seed + '_child');
+      for (const c of childWords) {
+        const child = addNode(c, parent.id, 1);
+        restart();
+        await new Promise(r => setTimeout(r, 80));
+        const grandWords = await fetchWords(c, 3);
+        while (grandWords.length < 3) grandWords.push(c + '_grand');
+        for (const g of grandWords) {
+          addNode(g, child.id, 2);
+        }
+        restart();
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '生成（親→子6→孫3×6）';
+      document.getElementById('seedInput').value = '';
+    }
+  });
+  // レスポンシブ
+  window.addEventListener('resize', () => {
+    svg.attr('width', getW()).attr('height', getH());
+    simulation.force('center', d3.forceCenter(getW() / 2, getH() / 2));
+  }
   // 🔹 親ページへ送信
   parent.postMessage({
     type: 'IDEA_RESULT',
     payload: word
   }, location.origin);
 //------------------------------------
-
   </script>
 </body>
 </html>
