@@ -1055,6 +1055,36 @@ async function finishSampling() {
     }
 }
 
+async function saveFullFishSnapshot(videoFish, gazeUV) {
+    const matFrame = await undistortFishFrame(videoFish);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = matFrame.cols;
+    canvas.height = matFrame.rows;
+    const ctx = canvas.getContext("2d");
+
+    // 歪み補正後の画像
+    const imgData = new ImageData(
+        new Uint8ClampedArray(matFrame.data),
+        matFrame.cols,
+        matFrame.rows
+    );
+    ctx.putImageData(imgData, 0, 0);
+
+    // 注視点を描画
+    ctx.fillStyle = "red";
+    ctx.beginPath();
+    ctx.arc(gazeUV[0], gazeUV[1], 12, 0, Math.PI * 2);
+    ctx.fill();
+
+    matFrame.delete();
+
+    // 保存
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+    downloadImage(dataUrl, `fish_snapshot_${timestamp}.jpg`);
+}
+
 // 生画像の取得
 function captureRawFishImage(video) {
     const c = document.createElement("canvas");
@@ -1291,6 +1321,7 @@ window.onload = async () => {
 
 
         if(uv) {
+            await saveFullFishSnapshot(videoFish, uv);
             // --- 編集初期値 ---
             editGazeUV = uv;
             offsetUV = [0, 0];
