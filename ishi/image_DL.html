@@ -993,7 +993,7 @@ async function loop() {
             const gaze_vec = Vec3.sub(activeIris3D, activeEyeCenter);
             const dir = Vec3.normalize(gaze_vec);
 
-            const uv = gaze3d_dir_to_fish(activeEyeCenter, activeGazeDir, currentModel);
+            const uv = gaze3d_dir_to_fish_DL(activeEyeCenter, activeGazeDir, currentModel);
 
             if(uv) {
                 // 描画
