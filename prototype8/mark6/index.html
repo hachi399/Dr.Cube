@@ -198,22 +198,27 @@ function createCard(card){
   const overlay = document.createElement("div");
   overlay.className = "swipe-layer";
   el.appendChild(overlay);
-//----------------指で動くように
+//---------------- 指で動くように（完全版）
 let startX = 0;
 let currentX = 0;
+let isDragging = false;
 
 overlay.addEventListener("pointerdown", e => {
   overlay.setPointerCapture(e.pointerId);
   startX = e.clientX;
   currentX = startX;
+  isDragging = true;
 });
 
 overlay.addEventListener("pointermove", e => {
-  // 指が動いている間は位置を更新
+  if (!isDragging) return;
   currentX = e.clientX;
 });
 
 overlay.addEventListener("pointerup", e => {
+  if (!isDragging) return;
+  isDragging = false;
+
   const dx = currentX - startX;
 
   if (Math.abs(dx) > 40) {
@@ -221,10 +226,17 @@ overlay.addEventListener("pointerup", e => {
     handleSwipe(dx, index);
   }
 
-  // リセット
   startX = 0;
   currentX = 0;
 });
+
+overlay.addEventListener("pointercancel", () => {
+  // Android Chrome でよく発生する
+  isDragging = false;
+  startX = 0;
+  currentX = 0;
+});
+//----------------------------------
 //----------------------------------
   cardArea.appendChild(el);
   cardMap.set(card.id, { el, overlay, iframe });
