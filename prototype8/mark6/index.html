@@ -185,7 +185,7 @@ function createCard(card){
 
   const iframe = document.createElement("iframe");
   iframe.src = PAGE_URL[card.type];
-  iframe.dataset.cardType = card.type;   // ★ 重要
+  iframe.dataset.cardType = card.type;
   iframe.dataset.cardId   = card.id;
 
   iframe.addEventListener('load', ()=>{
@@ -198,46 +198,46 @@ function createCard(card){
   const overlay = document.createElement("div");
   overlay.className = "swipe-layer";
   el.appendChild(overlay);
-//---------------- 指で動くように（完全版）
-let startX = 0;
-let currentX = 0;
-let isDragging = false;
 
-overlay.addEventListener("pointerdown", e => {
-  overlay.setPointerCapture(e.pointerId);
-  startX = e.clientX;
-  currentX = startX;
-  isDragging = true;
-});
+  /* ======== タッチ操作が確実に動く完全版 ======== */
+  let startX = 0;
+  let currentX = 0;
+  let isDragging = false;
 
-overlay.addEventListener("pointermove", e => {
-  if (!isDragging) return;
-  currentX = e.clientX;
-});
+  overlay.addEventListener("pointerdown", e => {
+    overlay.setPointerCapture(e.pointerId);
+    startX = e.clientX;
+    currentX = startX;
+    isDragging = true;
+  });
 
-overlay.addEventListener("pointerup", e => {
-  if (!isDragging) return;
-  isDragging = false;
+  overlay.addEventListener("pointermove", e => {
+    if (!isDragging) return;
+    currentX = e.clientX;
+  });
 
-  const dx = currentX - startX;
+  overlay.addEventListener("pointerup", e => {
+    if (!isDragging) return;
+    isDragging = false;
 
-  if (Math.abs(dx) > 40) {
-    const index = deck.findIndex(d => d.id === card.id);
-    handleSwipe(dx, index);
-  }
+    const dx = currentX - startX;
 
-  startX = 0;
-  currentX = 0;
-});
+    if (Math.abs(dx) > 40) {
+      const index = deck.findIndex(d => d.id === card.id);
+      handleSwipe(dx, index);
+    }
 
-overlay.addEventListener("pointercancel", () => {
-  // Android Chrome でよく発生する
-  isDragging = false;
-  startX = 0;
-  currentX = 0;
-});
-//----------------------------------
-//----------------------------------
+    startX = 0;
+    currentX = 0;
+  });
+
+  overlay.addEventListener("pointercancel", () => {
+    isDragging = false;
+    startX = 0;
+    currentX = 0;
+  });
+  /* ============================================= */
+
   cardArea.appendChild(el);
   cardMap.set(card.id, { el, overlay, iframe });
 }
