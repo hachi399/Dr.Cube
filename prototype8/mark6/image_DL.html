@@ -16,7 +16,7 @@
   select { padding: 8px; border-radius: 4px; }
   .status { margin-top: 10px; color: #aaa; font-size: 0.9rem; white-space: pre-wrap; }
   #calibration-overlay { position: relative; }
-  .panel-front {flex: 0 0 460px;}
+  .panel-front {flex: 0 0 240px;}
   #canvas-front {width: 100%;height: auto;}
 
 </style>
@@ -411,46 +411,6 @@ function normalizeInput(c) {
   ];
 }
 
-function train_model_from_calib(calib_list) {
-    if (!calib_list || calib_list.length === 0) return null;
-
-    const N = calib_list.length;
-    const features = [];
-    const Y_u = [];
-    const Y_v = [];
-
-    for (let c of calib_list) {
-        // c = [X,Y,Z, dx,dy,dz, u,v]
-        const pt  = [c[0], c[1], c[2]];
-        const dir = [c[3], c[4], c[5]];
-
-        const feat = features_with_dir(pt, dir); // ← 13次
-
-        for (let v of feat) features.push(v);
-
-        Y_u.push(c[6]);
-        Y_v.push(c[7]);
-    }
-
-    const coef_u = solveLeastSquares(features, Y_u, N, DIM);
-    const coef_v = solveLeastSquares(features, Y_v, N, DIM);
-
-    return { coef_u, coef_v };
-}
-
-// ★ 追加
-function features_with_dir(pt, dir) {
-    const [x, y, z] = pt;
-    const [dx, dy, dz] = dir;
-    return [
-        1.0,
-        x, y, z,
-        dx, dy, dz,
-        x*x, y*y, z*z,
-        x*dx, y*dy, z*dz,
-    ];
-}
-
 async function train_model_from_calib_DL(calib_list) {
   const xs = calib_list.map(c => normalizeInput(c));
     const ys = calib_list.map(c => [
@@ -552,18 +512,6 @@ function solveLeastSquares(A_data, Y_data, rows, cols) {
     }
 }
 
-function gaze3d_dir_to_fish(center, dir, model) {
-    if (!model) return null;
-
-    const f = features_with_dir(center, dir);
-
-    let u = 0, v = 0;
-    for (let i = 0; i < f.length; i++) {
-        u += f[i] * model.coef_u[i];
-        v += f[i] * model.coef_v[i];
-    }
-    return [Math.round(u), Math.round(v)];
-}
 
 // ==========================================
 // メインアプリケーション
@@ -585,6 +533,18 @@ let activeIris3D    = null; // L_I
 let snapMode = false;
 calibrationData = [];
 updateUI();
+
+function setupCanvasHiDPI(canvas, width, height) {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.style.width = width + "px";
+  canvas.style.height = height + "px";
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+}
 
 // フィルタ
 const pitchFilter = new OneEuroFilter();
@@ -609,15 +569,18 @@ async function startApp() {
     await db.open();
     await setupCameraSelectors();
     // --- 復元 ---
-    //calibrationData = await db.loadCalibData() || [];
+    calibrationData = await db.loadCalibData() || [];
     //currentModel = await db.loadModel();
 
     // ★ 状態を復元に合わせて決める
-    if (currentModel && calibrationData.length >= MIN_CALIB_POINTS) {
-        calibrationMode = false;
-        snapMode = true;
-        trainMode = false;
+    if (calibrationData.length >= MIN_CALIB_POINTS) {
         calibIndex = calibrationData.length;
+        console.log("Training...");
+        const model = await train_model_from_calib_DL(calibrationData);
+        currentModel = model;
+        calibrationMode = false;
+        trainMode = false;
+        snapMode = true;
     } else if (calibrationData.length > 0) {
         calibrationMode = true;
         trainMode = false;
@@ -756,6 +719,7 @@ async function undistortFishFrame(videoFish) {
 function drawMatOnCanvas(canvas, mat) {
     const ctx = canvas.getContext('2d');
     const imgData = new ImageData(new Uint8ClampedArray(mat.data), mat.cols, mat.rows);
+    ctx.imageSmoothingEnabled = false;
     ctx.putImageData(imgData, 0, 0);
 }
 
@@ -764,6 +728,7 @@ function drawMatOnCanvas(canvas, mat) {
 // ==========================================
 function drawGazePointsOnly(canvasFish, gazePoints) {
     const ctx = canvasFish.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
     for (let pt of gazePoints) {
         ctx.fillStyle = "red";
         ctx.beginPath();
@@ -807,6 +772,7 @@ function drawUndistortedWithZoom(canvas, matFrame, gazePoints=[], zoomLevel=2.0,
     tempCanvas.height = srcH;
     tempCanvas.getContext('2d').putImageData(imgData, 0, 0);
 
+    ctx.imageSmoothingEnabled = false;
     ctx.drawImage(
         tempCanvas,
         sx, sy, viewW, viewH,       // 元画像の切り出し矩形
@@ -1110,17 +1076,28 @@ function captureRawFishImage(video) {
 
 async function saveSnapshotFromCanvas(sourceCanvas, sx, sy, sw, sh) {
     // 1. 画像の切り抜き処理
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = sw;
-    tempCanvas.height = sh;
-    const tCtx = tempCanvas.getContext('2d');
-    const API_URL = "https://dr-cube-1.onrender.com/chat";
+    const scaleX = sourceCanvas.width  / sourceCanvas.getBoundingClientRect().width;
+    const scaleY = sourceCanvas.height / sourceCanvas.getBoundingClientRect().height;
 
+    const realSX = sx * scaleX;
+    const realSY = sy * scaleY;
+    const realSW = sw * scaleX;
+    const realSH = sh * scaleY;
+
+    const tempCanvas = document.createElement('canvas');
+    const tCtx = tempCanvas.getContext('2d');
+
+    tempCanvas.width  = realSW;
+    tempCanvas.height = realSH;
+
+    tCtx.imageSmoothingEnabled = false;
     tCtx.drawImage(
         sourceCanvas,
-        sx, sy, sw, sh,
-        0, 0, sw, sh
+        realSX, realSY, realSW, realSH,
+        0, 0, realSW, realSH
     );
+
+    const API_URL = "https://dr-cube-1.onrender.com/chat";
 
     // --- UI準備 ---
     const statusFish = document.getElementById('status-fish');
@@ -1130,7 +1107,7 @@ async function saveSnapshotFromCanvas(sourceCanvas, sx, sy, sw, sh) {
 
     try {
         // 🔹 Canvas → Base64（JPEG 0.75で十分軽量）
-        const base64Image = tempCanvas.toDataURL("image/jpeg", 0.75);
+        const base64Image = tempCanvas.toDataURL("image/png");
 
         // 🔹 API送信用 JSON
         const payload = {
@@ -1471,7 +1448,7 @@ window.onload = async () => {
 
     // --- 保存・キャンセル ---
     document.getElementById('btn-save-crop').onclick = async () => {
-        if (cropRect.w <= 10 || cropRect.h <= 10) return;
+        //if (cropRect.w <= 10 || cropRect.h <= 10) return;
 
         await saveSnapshotFromCanvas(
             canvasEdit,
@@ -1561,4 +1538,3 @@ window.onload = async () => {
 </script>
 </body>
 </html>
-
