@@ -1360,8 +1360,8 @@ window.onload = async () => {
             editImageData = new Image();
             editImageData.src = tempCanvas.toDataURL(); // これで歪み補正済み画像がセットされる
             editImageData.onload = () => {
-                canvasEdit.width = 640; 
-                canvasEdit.height = 360;
+                canvasEdit.width = 1920; 
+                canvasEdit.height = 1080;
                 document.getElementById('edit-panel').style.display = 'block';
                 document.getElementById('edit-gaze-pos').innerText = `(${uv[0]}, ${uv[1]})`;
                 updateEditCanvas();
@@ -1561,3 +1561,4 @@ window.onload = async () => {
 </script>
 </body>
 </html>
+
