@@ -198,21 +198,34 @@ function createCard(card){
   const overlay = document.createElement("div");
   overlay.className = "swipe-layer";
   el.appendChild(overlay);
+//----------------指で動くように
+let startX = 0;
+let currentX = 0;
 
-  let startX = 0;
-  overlay.addEventListener("pointerdown", e=>{
-    overlay.setPointerCapture(e.pointerId);
-    startX = e.clientX;
-  });
+overlay.addEventListener("pointerdown", e => {
+  overlay.setPointerCapture(e.pointerId);
+  startX = e.clientX;
+  currentX = startX;
+});
 
-  overlay.addEventListener("pointerup", e=>{
-    const dx = e.clientX - startX;
-    if(Math.abs(dx) > 40){
-      const index = deck.findIndex(d=>d.id===card.id);
-      handleSwipe(dx, index);
-    }
-  });
+overlay.addEventListener("pointermove", e => {
+  // 指が動いている間は位置を更新
+  currentX = e.clientX;
+});
 
+overlay.addEventListener("pointerup", e => {
+  const dx = currentX - startX;
+
+  if (Math.abs(dx) > 40) {
+    const index = deck.findIndex(d => d.id === card.id);
+    handleSwipe(dx, index);
+  }
+
+  // リセット
+  startX = 0;
+  currentX = 0;
+});
+//----------------------------------
   cardArea.appendChild(el);
   cardMap.set(card.id, { el, overlay, iframe });
 }
