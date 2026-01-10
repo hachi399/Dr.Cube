@@ -1181,7 +1181,7 @@ async function saveSnapshotFromCanvas(sourceCanvas, sx, sy, sw, sh) {
     document.getElementById('edit-panel').style.display = 'none';
     document.getElementById('crop-guide').style.display = 'none';
 
-    alert("解析完了！親ページにデータを送りました。");
+    //alert("解析完了！親ページにデータを送りました。");
 }
 
 // --- 編集エディタ用のグローバル変数 ---
@@ -1267,7 +1267,7 @@ window.onload = async () => {
             await db.saveSetting("fishCamId",  selFish.value);
             await startApp();
         } catch (e) {
-            alert("カメラ設定の保存に失敗しました");
+            //alert("カメラ設定の保存に失敗しました");
             console.error(e);
         }
     });
@@ -1281,7 +1281,7 @@ window.onload = async () => {
     };
 
     document.getElementById('btn-recalib').onclick = async () => {
-        if (!confirm("キャリブレーションを最初からやり直しますか？")) return;
+        //if (!confirm("キャリブレーションを最初からやり直しますか？")) return;
 
         calibrationData = [];
         samplingBuffer = [];
@@ -1305,12 +1305,12 @@ window.onload = async () => {
     const triggerSnap = async () => {
         // currentModelやsnapBufferのチェック
         if(!currentModel) {
-             alert("学習を先に完了させてね"); 
+             //alert("学習を先に完了させてね"); 
              console.warn("[Snap] aborted: model not trained");
              return; 
         }
         if(snapBuffer.length < 1) { 
-            alert("視線を認識させてから押してね");
+            //alert("視線を認識させてから押してね");
             console.warn("[Snap] aborted: snapBuffer empty");
             return; 
         }
@@ -1532,7 +1532,7 @@ window.onload = async () => {
     // 学習 (t)
     const triggerTrain = async () => {
         if(calibrationData.length < MIN_CALIB_POINTS) {
-            alert(`データ不足です (${MIN_CALIB_POINTS}点必要)`); return;
+            //alert(`データ不足です (${MIN_CALIB_POINTS}点必要)`); return;
         }
         console.log("Training...");
         const model = await train_model_from_calib_DL(calibrationData);
@@ -1540,7 +1540,7 @@ window.onload = async () => {
         //await db.saveModel(model.coef_u, model.coef_v);
         calibrationMode = false;
         trainMode = false;
-        alert("学習完了！DBに保存しました。");
+        //alert("学習完了！DBに保存しました。");
         snapMode = true;
         updateUI();
     };
@@ -1550,13 +1550,11 @@ window.onload = async () => {
         // window.onload の中の btn-reset-db の部分
     document.getElementById('btn-reset-db').onclick = async () => {
         if (!db.db) {
-            alert("データベースが準備できていません。ページを再読み込みしてください。");
+            //alert("データベースが準備できていません。ページを再読み込みしてください。");
             return;
         }
-        if (confirm("全学習データと設定を消去しますか？")) {
-            await db.clearAll();
-            location.reload();
-        }
+        await db.clearAll();
+        location.reload();
     };
 
 };
