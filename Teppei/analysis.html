@@ -89,6 +89,14 @@
   <script>
     let cardType = null;
     let initialized = false;
+    
+    function init(payload){
+  if (initialized) return;
+  initialized = true;
+
+  console.log("INIT OK", payload.cardType);
+  setup();
+}
     function init(payload){
   if (initialized) return;
   initialized = true;
