@@ -34,7 +34,6 @@
   parent.postMessage({ type }, location.origin);
   }
 
-
   /* ---------------------------------------------------
       ✅ 親ページからの DB_UPDATE を受信して自動生成
   --------------------------------------------------- */
@@ -301,9 +300,15 @@ document.addEventListener("pointerup", () => {
   notifyParent("IFRAME_INTERACT_END");
 });
 
-document.addEventListener("wheel", () => {
-  notifyParent("IFRAME_INTERACT_START");
-}, { passive: true });
+// スクロールも重要
+document.addEventListener(
+  "wheel",
+  () => {
+    notifyParent("IFRAME_INTERACT_START");
+  },
+  { passive: true }
+);
+
 
   // ボタン処理
   document.getElementById('addSeedBtn').addEventListener('click', async () => {
