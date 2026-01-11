@@ -30,6 +30,10 @@
 
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script>
+  function notifyParent(type){
+  parent.postMessage({ type }, location.origin);
+  }
+
 
   /* ---------------------------------------------------
       ✅ 親ページからの DB_UPDATE を受信して自動生成
@@ -289,6 +293,18 @@
       d3.select(this).select('line.visible').attr('x1', d.source.x).attr('y1', d.source.y).attr('x2', d.target.x).attr('y2', d.target.y);
     });
   }
+  document.addEventListener("pointerdown", () => {
+  notifyParent("IFRAME_INTERACT_START");
+});
+
+document.addEventListener("pointerup", () => {
+  notifyParent("IFRAME_INTERACT_END");
+});
+
+document.addEventListener("wheel", () => {
+  notifyParent("IFRAME_INTERACT_START");
+}, { passive: true });
+
   // ボタン処理
   document.getElementById('addSeedBtn').addEventListener('click', async () => {
     const seed = document.getElementById('seedInput').value.trim();
