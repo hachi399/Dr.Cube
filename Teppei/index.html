@@ -211,16 +211,16 @@ function handleSwipe(dist, index) {
 window.addEventListener("message", e => {
   if (e.origin !== location.origin) return;
 
-  if (e.data.type === "IFRAME_SWIPE") {
-    const iframe = [...document.querySelectorAll("iframe")]
-      .find(f => f.contentWindow === e.source);
+  if (e.data?.type === "IFRAME_READY") {
+    console.log("READY:", e.data.frame);
 
-    if (!iframe) return;
-
-    const index = deck.findIndex(c => c.id === iframe.dataset.cardId);
-    if (index !== -1) handleSwipe(e.data.dist, index);
+    e.source.postMessage({
+      type: "INIT",
+      payload: { startedAt: Date.now() }
+    }, location.origin);
   }
 });
+
 
 /* =====================================================
    初期化
