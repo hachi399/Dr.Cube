@@ -60,7 +60,7 @@
   /* ---------------------------------------------------
       ✅ 以下はあなたの元コード（生成ロジック）
   --------------------------------------------------- */
-
+  let cardType = null;
   let nodes = [];
   let links = [];
   let idCounter = 0;
@@ -70,6 +70,18 @@
   const tooltip = d3.select('#tooltip');
   const getW = () => window.innerWidth;
   const getH = () => window.innerHeight;
+  
+    function init(payload){
+  cardType = payload.cardType;
+  console.log("INIT received:", cardType);
+
+  // ここでイベント登録・描画開始
+  setup();
+}
+
+function setup(){
+  // ボタン、入力、IndexedDB反映など
+}
   //背景
   const defs = svg.append('defs');
   const bgGradient = defs.append('linearGradient')
@@ -340,6 +352,19 @@ document.addEventListener(
       document.getElementById('seedInput').value = '';
     }
   });
+    /* 🔥 これが重要 */
+window.addEventListener("message", e => {
+  if (e.origin !== location.origin) return;
+  if (e.data?.type === "INIT") {
+    init(e.data.payload);
+  }
+});
+
+/* 🔥 INIT 取りこぼし対策 */
+window.parent.postMessage(
+  { type: "IFRAME_READY" },
+  location.origin
+);
   // レスポンシブ
   window.addEventListener('resize', () => {
     svg.attr('width', getW()).attr('height', getH());
