@@ -276,7 +276,7 @@
     const nodeSel = nodeG.selectAll('g.node').data(nodes, d => d.id);
     nodeSel.exit().remove();
     const nodeEnter = nodeSel.enter().append('g').attr('class', 'node').call(nodeDrag);
-    nodeEnter.append('circle').attr('r', d => d.dept === 0 ? 20 : 16).attr('fill', d => d.depth === 0 ? '#ffd703' : '#ffdca8').attr('stroke', '#e6a86b').attr('stroke-width', 2);
+    nodeEnter.append('circle').attr('r', d => d.depth === 0 ? 20 : 16).attr('fill', d => d.depth === 0 ? '#ffd703' : '#ffdca8').attr('stroke', '#e6a86b').attr('stroke-width', 2);
     nodeEnter.append('text').attr('dy', 4).attr('text-anchor', 'middle').style('font-size', '11px').text(d => d.name);
     simulation.nodes(nodes);
     simulation.force('link').links(links);
@@ -326,9 +326,15 @@
   })
   // 🔹 親ページへ送信
   parent.postMessage({
-    type: 'IDEA_RESULT',
-    payload: word
-  }, location.origin);
+  type: 'IDEA_RESULT',
+  payload: {
+    seed,
+    nodes,
+    links,
+    time: Date.now()
+  }
+}, location.origin);
+
 //------------------------------------
   </script>
 </body>
