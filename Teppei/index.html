@@ -233,25 +233,6 @@ window.addEventListener("message", e => {
 });
 
 /* =====================================================
-   スワイプ距離検知
-===================================================== */
-let startX = 0;
-
-el.addEventListener("pointerdown", e => {
-  startX = e.clientX;
-  el.setPointerCapture(e.pointerId);
-});
-
-el.addEventListener("pointerup", e => {
-  const dist = e.clientX - startX;
-
-  if (Math.abs(dist) > 80) { // ← スワイプ閾値
-    const index = Number(el.dataset.index);
-    handleSwipe(dist, index);
-  }
-});
-
-/* =====================================================
    初期化
 ===================================================== */
 deck.forEach(createCard);
