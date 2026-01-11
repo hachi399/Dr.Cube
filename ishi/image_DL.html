@@ -16,7 +16,7 @@
   select { padding: 8px; border-radius: 4px; }
   .status { margin-top: 10px; color: #aaa; font-size: 0.9rem; white-space: pre-wrap; }
   #calibration-overlay { position: relative; }
-  .panel-front {flex: 0 0 460px;}
+  .panel-front {flex: 0 0 240px;}
   #canvas-front {width: 100%;height: auto;}
 
 </style>
@@ -402,49 +402,21 @@ function get_eye_center_by_ellipse(lm, ids, w, h) {
 // ==========================================
 // 回帰学習ロジック (指定準拠)
 // ==========================================
-function train_model_from_calib(calib_list) {
-    if (!calib_list || calib_list.length === 0) return null;
-
-    const N = calib_list.length;
-    const features = [];
-    const Y_u = [];
-    const Y_v = [];
-
-    for (let c of calib_list) {
-        // c = [X,Y,Z, dx,dy,dz, u,v]
-        const pt  = [c[0], c[1], c[2]];
-        const dir = [c[3], c[4], c[5]];
-
-        const feat = features_with_dir(pt, dir); // ← 13次
-
-        for (let v of feat) features.push(v);
-
-        Y_u.push(c[6]);
-        Y_v.push(c[7]);
-    }
-
-    const coef_u = solveLeastSquares(features, Y_u, N, DIM);
-    const coef_v = solveLeastSquares(features, Y_v, N, DIM);
-
-    return { coef_u, coef_v };
-}
-
-// ★ 追加
-function features_with_dir(pt, dir) {
-    const [x, y, z] = pt;
-    const [dx, dy, dz] = dir;
-    return [
-        1.0,
-        x, y, z,
-        dx, dy, dz,
-        x*x, y*y, z*z,
-        x*dx, y*dy, z*dz,
-    ];
+function normalizeInput(c) {
+  return [
+    c[0] / 0.6,   // X
+    c[1] / 0.6,   // Y
+    c[2] / 0.6,   // Z
+    c[3], c[4], c[5]  // dirはすでに正規化済み
+  ];
 }
 
 async function train_model_from_calib_DL(calib_list) {
-  const xs = calib_list.map(c => c.slice(0, 6)); // [X,Y,Z,dx,dy,dz]
-  const ys = calib_list.map(c => [c[6], c[7]]); // [u,v]
+  const xs = calib_list.map(c => normalizeInput(c));
+    const ys = calib_list.map(c => [
+    c[6] / FISH_WIDTH,
+    c[7] / FISH_HEIGHT
+    ]);
 
   const model = tf.sequential();
   model.add(tf.layers.dense({inputShape:[6], units:32, activation:'relu'}));
@@ -466,10 +438,23 @@ async function train_model_from_calib_DL(calib_list) {
 }
 
 function gaze3d_dir_to_fish_DL(center, dir, model) {
-  const x = tf.tensor2d([[...center, ...dir]]);
+  const input = [
+    center[0]/0.6,
+    center[1]/0.6,
+    center[2]/0.6,
+    dir[0], dir[1], dir[2]
+  ];
+
+  const x = tf.tensor2d([input]);
   const y = model.predict(x).arraySync()[0];
-  return [Math.round(y[0]), Math.round(y[1])];
+  x.dispose();
+
+  return [
+    Math.round(y[0] * FISH_WIDTH),
+    Math.round(y[1] * FISH_HEIGHT)
+  ];
 }
+
 
 function solveLeastSquares(A_data, Y_data, rows, cols) {
     if (!window.cv || !cv.Mat) return new Array(cols).fill(0);
@@ -527,18 +512,6 @@ function solveLeastSquares(A_data, Y_data, rows, cols) {
     }
 }
 
-function gaze3d_dir_to_fish(center, dir, model) {
-    if (!model) return null;
-
-    const f = features_with_dir(center, dir);
-
-    let u = 0, v = 0;
-    for (let i = 0; i < f.length; i++) {
-        u += f[i] * model.coef_u[i];
-        v += f[i] * model.coef_v[i];
-    }
-    return [Math.round(u), Math.round(v)];
-}
 
 // ==========================================
 // メインアプリケーション
@@ -560,6 +533,18 @@ let activeIris3D    = null; // L_I
 let snapMode = false;
 calibrationData = [];
 updateUI();
+
+function setupCanvasHiDPI(canvas, width, height) {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.style.width = width + "px";
+  canvas.style.height = height + "px";
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+}
 
 // フィルタ
 const pitchFilter = new OneEuroFilter();
@@ -585,14 +570,17 @@ async function startApp() {
     await setupCameraSelectors();
     // --- 復元 ---
     calibrationData = await db.loadCalibData() || [];
-    currentModel = await db.loadModel();
+    //currentModel = await db.loadModel();
 
     // ★ 状態を復元に合わせて決める
-    if (currentModel && calibrationData.length >= MIN_CALIB_POINTS) {
-        calibrationMode = false;
-        snapMode = true;
-        trainMode = false;
+    if (calibrationData.length >= MIN_CALIB_POINTS) {
         calibIndex = calibrationData.length;
+        console.log("Training...");
+        const model = await train_model_from_calib_DL(calibrationData);
+        currentModel = model;
+        calibrationMode = false;
+        trainMode = false;
+        snapMode = true;
     } else if (calibrationData.length > 0) {
         calibrationMode = true;
         trainMode = false;
@@ -731,6 +719,7 @@ async function undistortFishFrame(videoFish) {
 function drawMatOnCanvas(canvas, mat) {
     const ctx = canvas.getContext('2d');
     const imgData = new ImageData(new Uint8ClampedArray(mat.data), mat.cols, mat.rows);
+    ctx.imageSmoothingEnabled = false;
     ctx.putImageData(imgData, 0, 0);
 }
 
@@ -739,6 +728,7 @@ function drawMatOnCanvas(canvas, mat) {
 // ==========================================
 function drawGazePointsOnly(canvasFish, gazePoints) {
     const ctx = canvasFish.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
     for (let pt of gazePoints) {
         ctx.fillStyle = "red";
         ctx.beginPath();
@@ -782,6 +772,7 @@ function drawUndistortedWithZoom(canvas, matFrame, gazePoints=[], zoomLevel=2.0,
     tempCanvas.height = srcH;
     tempCanvas.getContext('2d').putImageData(imgData, 0, 0);
 
+    ctx.imageSmoothingEnabled = false;
     ctx.drawImage(
         tempCanvas,
         sx, sy, viewW, viewH,       // 元画像の切り出し矩形
@@ -1076,7 +1067,7 @@ function captureRawFishImage(video) {
     // ★ 生のフレームだけを描画
     ctx.drawImage(video, 0, 0, c.width, c.height);
 
-    return c.toDataURL("image/jpeg");
+    return c.toDataURL("image/png");
 }
 
 /* ===============================
@@ -1085,17 +1076,28 @@ function captureRawFishImage(video) {
 
 async function saveSnapshotFromCanvas(sourceCanvas, sx, sy, sw, sh) {
     // 1. 画像の切り抜き処理
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = sw;
-    tempCanvas.height = sh;
-    const tCtx = tempCanvas.getContext('2d');
-    const API_URL = "https://dr-cube-1.onrender.com/chat";
+    const scaleX = sourceCanvas.width  / sourceCanvas.getBoundingClientRect().width;
+    const scaleY = sourceCanvas.height / sourceCanvas.getBoundingClientRect().height;
 
+    const realSX = sx * scaleX;
+    const realSY = sy * scaleY;
+    const realSW = sw * scaleX;
+    const realSH = sh * scaleY;
+
+    const tempCanvas = document.createElement('canvas');
+    const tCtx = tempCanvas.getContext('2d');
+
+    tempCanvas.width  = realSW;
+    tempCanvas.height = realSH;
+
+    tCtx.imageSmoothingEnabled = false;
     tCtx.drawImage(
         sourceCanvas,
-        sx, sy, sw, sh,
-        0, 0, sw, sh
+        realSX, realSY, realSW, realSH,
+        0, 0, realSW, realSH
     );
+
+    const API_URL = "https://dr-cube-1.onrender.com/chat";
 
     // --- UI準備 ---
     const statusFish = document.getElementById('status-fish');
@@ -1105,7 +1107,7 @@ async function saveSnapshotFromCanvas(sourceCanvas, sx, sy, sw, sh) {
 
     try {
         // 🔹 Canvas → Base64（JPEG 0.75で十分軽量）
-        const base64Image = tempCanvas.toDataURL("image/jpeg", 0.75);
+        const base64Image = tempCanvas.toDataURL("image/png");
 
         // 🔹 API送信用 JSON
         const payload = {
@@ -1156,7 +1158,7 @@ async function saveSnapshotFromCanvas(sourceCanvas, sx, sy, sw, sh) {
     document.getElementById('edit-panel').style.display = 'none';
     document.getElementById('crop-guide').style.display = 'none';
 
-    alert("解析完了！親ページにデータを送りました。");
+    //alert("解析完了！親ページにデータを送りました。");
 }
 
 // --- 編集エディタ用のグローバル変数 ---
@@ -1208,6 +1210,22 @@ function downloadSnapshotAsJSON(snapshotData) {
     URL.revokeObjectURL(url);
 }
 
+function getCanvasPos(e, canvas) {
+    const rect = canvas.getBoundingClientRect();
+
+    if (e.touches && e.touches.length > 0) {
+        return {
+            x: e.touches[0].clientX - rect.left,
+            y: e.touches[0].clientY - rect.top
+        };
+    } else {
+        return {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        };
+    }
+}
+
 // イベントリスナー
 window.onload = async () => {
     await db.open();
@@ -1226,7 +1244,7 @@ window.onload = async () => {
             await db.saveSetting("fishCamId",  selFish.value);
             await startApp();
         } catch (e) {
-            alert("カメラ設定の保存に失敗しました");
+            //alert("カメラ設定の保存に失敗しました");
             console.error(e);
         }
     });
@@ -1240,7 +1258,7 @@ window.onload = async () => {
     };
 
     document.getElementById('btn-recalib').onclick = async () => {
-        if (!confirm("キャリブレーションを最初からやり直しますか？")) return;
+        //if (!confirm("キャリブレーションを最初からやり直しますか？")) return;
 
         calibrationData = [];
         samplingBuffer = [];
@@ -1264,12 +1282,12 @@ window.onload = async () => {
     const triggerSnap = async () => {
         // currentModelやsnapBufferのチェック
         if(!currentModel) {
-             alert("学習を先に完了させてね"); 
+             //alert("学習を先に完了させてね"); 
              console.warn("[Snap] aborted: model not trained");
              return; 
         }
         if(snapBuffer.length < 1) { 
-            alert("視線を認識させてから押してね");
+            //alert("視線を認識させてから押してね");
             console.warn("[Snap] aborted: snapBuffer empty");
             return; 
         }
@@ -1299,7 +1317,7 @@ window.onload = async () => {
         sumDir[2]/snapBuffer.length
         ]);
 
-        const uv = gaze3d_dir_to_fish(meanEye, meanDir, currentModel);
+        const uv = gaze3d_dir_to_fish_DL(meanEye, meanDir, currentModel);
 
 
         if(uv) {
@@ -1319,8 +1337,8 @@ window.onload = async () => {
             editImageData = new Image();
             editImageData.src = tempCanvas.toDataURL(); // これで歪み補正済み画像がセットされる
             editImageData.onload = () => {
-                canvasEdit.width = 640; 
-                canvasEdit.height = 360;
+                canvasEdit.width = 1920; 
+                canvasEdit.height = 1080;
                 document.getElementById('edit-panel').style.display = 'block';
                 document.getElementById('edit-gaze-pos').innerText = `(${uv[0]}, ${uv[1]})`;
                 updateEditCanvas();
@@ -1346,32 +1364,79 @@ window.onload = async () => {
     // --- エディタ操作 (ドラッグ) ---
     canvasEdit.onmousedown = (e) => {
         isDragging = true;
-        const rect = canvasEdit.getBoundingClientRect();
-        startPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        const pos = getCanvasPos(e, canvasEdit);
+        startPos = { x: pos.x, y: pos.y };
     };
 
     window.addEventListener('mousemove', (e) => {
         if(!isDragging) return;
-        const rect = canvasEdit.getBoundingClientRect();
-        const currX = Math.max(0, Math.min(e.clientX - rect.left, canvasEdit.width));
-        const currY = Math.max(0, Math.min(e.clientY - rect.top, canvasEdit.height));
-        
+
+        const pos = getCanvasPos(e, canvasEdit);
+        const currX = Math.max(0, Math.min(pos.x, canvasEdit.width));
+        const currY = Math.max(0, Math.min(pos.y, canvasEdit.height));
+
         cropRect = {
             x: Math.min(startPos.x, currX),
             y: Math.min(startPos.y, currY),
             w: Math.abs(currX - startPos.x),
             h: Math.abs(currY - startPos.y)
         };
-        
+
         const guide = document.getElementById('crop-guide');
         guide.style.display = 'block';
         guide.style.left = (canvasEdit.offsetLeft + cropRect.x) + "px";
-        guide.style.top = (canvasEdit.offsetTop + cropRect.y) + "px";
-        guide.style.width = cropRect.w + "px";
+        guide.style.top  = (canvasEdit.offsetTop  + cropRect.y) + "px";
+        guide.style.width  = cropRect.w + "px";
         guide.style.height = cropRect.h + "px";
     });
 
     window.addEventListener('mouseup', () => { isDragging = false; });
+
+    canvasEdit.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        isDragging = true;
+        const pos = getCanvasPos(e, canvasEdit);
+        startPos = { x: pos.x, y: pos.y };
+    }, { passive: false });
+
+    canvasEdit.addEventListener('touchmove', (e) => {
+        if(!isDragging) return;
+        e.preventDefault();
+
+        const pos = getCanvasPos(e, canvasEdit);
+        const currX = Math.max(0, Math.min(pos.x, canvasEdit.width));
+        const currY = Math.max(0, Math.min(pos.y, canvasEdit.height));
+
+        cropRect = {
+            x: Math.min(startPos.x, currX),
+            y: Math.min(startPos.y, currY),
+            w: Math.abs(currX - startPos.x),
+            h: Math.abs(currY - startPos.y)
+        };
+
+        const guide = document.getElementById('crop-guide');
+        guide.style.display = 'block';
+        guide.style.left = (canvasEdit.offsetLeft + cropRect.x) + "px";
+        guide.style.top  = (canvasEdit.offsetTop  + cropRect.y) + "px";
+        guide.style.width  = cropRect.w + "px";
+        guide.style.height = cropRect.h + "px";
+    }, { passive: false });
+
+    canvasEdit.addEventListener('touchend', async (e) => {
+        e.preventDefault();
+        isDragging = false;
+
+        if (cropRect.w > 10 && cropRect.h > 10) {
+            await saveSnapshotFromCanvas(
+                canvasEdit,
+                cropRect.x,
+                cropRect.y,
+                cropRect.w,
+                cropRect.h
+            );
+            cropRect = {x:0,y:0,w:0,h:0};
+        }
+    }, { passive: false });
 
     // --- ズーム・移動ボタン ---
     document.getElementById('btn-zoom-in').onclick = () => { zoomLevel *= 1.2; updateEditCanvas(); };
@@ -1383,7 +1448,7 @@ window.onload = async () => {
 
     // --- 保存・キャンセル ---
     document.getElementById('btn-save-crop').onclick = async () => {
-        if (cropRect.w <= 10 || cropRect.h <= 10) return;
+        //if (cropRect.w <= 10 || cropRect.h <= 10) return;
 
         await saveSnapshotFromCanvas(
             canvasEdit,
@@ -1444,15 +1509,14 @@ window.onload = async () => {
     // 学習 (t)
     const triggerTrain = async () => {
         if(calibrationData.length < MIN_CALIB_POINTS) {
-            alert(`データ不足です (${MIN_CALIB_POINTS}点必要)`); return;
+            //alert(`データ不足です (${MIN_CALIB_POINTS}点必要)`); return;
         }
         console.log("Training...");
         const model = await train_model_from_calib_DL(calibrationData);
         currentModel = model;
-        //await db.saveModel(model.coef_u, model.coef_v);
         calibrationMode = false;
         trainMode = false;
-        alert("学習完了！DBに保存しました。");
+        //alert("学習完了！DBに保存しました。");
         snapMode = true;
         updateUI();
     };
@@ -1462,13 +1526,11 @@ window.onload = async () => {
         // window.onload の中の btn-reset-db の部分
     document.getElementById('btn-reset-db').onclick = async () => {
         if (!db.db) {
-            alert("データベースが準備できていません。ページを再読み込みしてください。");
+            //alert("データベースが準備できていません。ページを再読み込みしてください。");
             return;
         }
-        if (confirm("全学習データと設定を消去しますか？")) {
-            await db.clearAll();
-            location.reload();
-        }
+        await db.clearAll();
+        location.reload();
     };
 
 };
