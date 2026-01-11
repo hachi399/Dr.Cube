@@ -2,9 +2,9 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Auto Capture AI Chat</title>
+  <title>Analysis Frame</title>
+
   <style>
-    /* ====== 全体デザイン ====== */
     html, body {
       margin: 0;
       padding: 0;
@@ -12,179 +12,158 @@
       background: radial-gradient(circle at top left, #0f2027, #203a43, #2c5364);
       font-family: "Segoe UI", "Hiragino Sans", sans-serif;
       color: #fff;
-      overflow-y: auto;
     }
 
     main {
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: flex-start;
-      min-height: 100vh;
-      padding: 2em 1em;
+      padding: 1.5em;
+      height: 100%;
+      box-sizing: border-box;
     }
 
     #chat {
-      width: 80%;
-      max-width: 600px;
-      height: 300px;
+      width: 90%;
+      max-width: 700px;
+      flex: 1;
       overflow-y: auto;
-      margin-bottom: 1em;
       padding: 1em;
-      backdrop-filter: blur(20px) saturate(180%);
-      background-color: rgba(255, 255, 255, 0.1);
+      background: rgba(255,255,255,0.12);
       border-radius: 16px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(16px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+      margin-bottom: 1em;
     }
 
-    #input {
-      width: 70%;
+    .controls {
+      display: flex;
+      width: 90%;
+      max-width: 700px;
+      gap: 0.5em;
+    }
+
+    input {
+      flex: 1;
       padding: 0.6em;
       border-radius: 8px;
       border: none;
       font-size: 1em;
-      margin-right: 0.5em;
     }
 
     button {
       padding: 0.6em 1em;
+      border-radius: 10px;
       border: none;
-      border-radius: 12px;
       background: linear-gradient(135deg, #00c6ff, #0072ff);
       color: #fff;
       font-weight: bold;
       cursor: pointer;
-      transition: all 0.3s ease;
     }
 
     button:hover {
-      transform: scale(1.05);
-      background: linear-gradient(135deg, #0072ff, #00c6ff);
-    }
-
-    .chat-controls {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      flex-wrap: wrap;
-      margin-bottom: 2em;
+      opacity: 0.9;
     }
   </style>
 </head>
 
 <body>
-  <main>
-    <h1>Dr.Cube AI解析 /Team.ぐんまちゃん/</h1>
+<main>
+  <h2>AI 解析フレーム</h2>
 
-    <div id="chat">
-      <p>お手伝いできることはありますか？</p>
-    </div>
+  <div id="chat">
+    <p>解析待機中…</p>
+  </div>
 
-    <div class="chat-controls">
-      <input id="input" placeholder="メッセージを入力..." />
-      <button onclick="sendMessage()">送信</button>
-    </div>
-  </main>
+  <div class="controls">
+    <input id="input" placeholder="手動解析メッセージ…" />
+    <button id="sendBtn">送信</button>
+  </div>
+</main>
 
-  <script>
-    let cardType = null;
-    let initialized = false;
-    
-    function init(payload){
-  if (initialized) return;
-  initialized = true;
+<script>
+/* =====================================================
+   状態
+===================================================== */
+let initialized = false;
+let cardType = null;
 
-  console.log("INIT OK", payload.cardType);
-  setup();
-}
-    function init(payload){
-  if (initialized) return;
-  initialized = true;
+const API_URL = "https://dr-cube-1.onrender.com/chat";
 
-  console.log("INIT OK", payload.cardType);
-  setup();
-}
-    function setup(){
-  // ボタン、入力、IndexedDB反映など
-}
-    const API_URL = "https://dr-cube-1.onrender.com/chat";
+const chatEl = document.getElementById("chat");
+const inputEl = document.getElementById("input");
 
-// ✅ 親ウィンドウからの解析メッセージを受信
+/* =====================================================
+   親との通信
+===================================================== */
 window.addEventListener("message", async (e) => {
   if (e.origin !== location.origin) return;
 
   const { type, payload } = e.data || {};
-  if (type !== "DB_UPDATE") return;
 
-  const chat = document.getElementById("chat");
+  /* INIT は一度だけ */
+  if (type === "INIT") {
+    if (initialized) return;
+    initialized = true;
+    cardType = payload.cardType;
+    log(`INIT 完了（type=${cardType}）`);
+    return;
+  }
 
-  // 受信内容をチャット欄に表示
-  chat.innerHTML += `<p><b>解析データ受信:</b> ${JSON.stringify(payload)}</p>`;
-
-  // AI に解析データを送信
-  const res = await fetch(API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message: JSON.stringify(payload) }),
-  });
-
-  const data = await res.json();
-
-  chat.innerHTML += `<p><b>AI解析:</b> ${data.reply}</p>`;
-  chat.scrollTop = chat.scrollHeight;
-
-  // ✅ 親ページへ解析結果を送信
-  parent.postMessage({
-    type: "AI_RESULT",
-    payload: data.reply
-  }, location.origin);
-});
-async function sendMessage() {
-  const input = document.getElementById("input");
-  const chat = document.getElementById("chat");
-  const textContent = input.value;
-
-  if (!textContent) return;
-
-  chat.innerHTML += `<p><b>あなた:</b> ${textContent}</p>`;
-  input.value = "";
-
-  const res = await fetch(API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message: textContent }),
-  });
-
-  const data = await res.json();
-
-  chat.innerHTML += `<p><b>AI:</b> ${data.reply}</p>`;
-  chat.scrollTop = chat.scrollHeight;
-
-  /* 🔥 これが重要 */
-window.addEventListener("message", e => {
-  if (e.origin !== location.origin) return;
-  if (e.data?.type === "INIT") {
-    init(e.data.payload);
+  /* DB_UPDATE → AI解析 */
+  if (type === "DB_UPDATE") {
+    if (!initialized) return;
+    await analyze(JSON.stringify(payload));
   }
 });
-// 親に「準備できた」と通知
+
+/* 親に ready を通知 */
 window.parent.postMessage(
   { type: "IFRAME_READY" },
   location.origin
 );
 
-/* 🔥 INIT 取りこぼし対策 */
-window.parent.postMessage(
-  { type: "IFRAME_READY" },
-  location.origin
-);
-
-  // ✅ 親ページへ解析結果を送信
-  parent.postMessage({
-    type: "ANALYSIS_RESULT",
-    payload: data.reply
-  }, location.origin);
+/* =====================================================
+   UI & AI
+===================================================== */
+function log(text) {
+  chatEl.innerHTML += `<p>${text}</p>`;
+  chatEl.scrollTop = chatEl.scrollHeight;
 }
-  </script>
+
+async function analyze(message) {
+  log(`<b>解析対象:</b> ${message}`);
+
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message })
+    });
+
+    const data = await res.json();
+    log(`<b>AI解析:</b> ${data.reply}`);
+
+    parent.postMessage({
+      type: "ANALYSIS_RESULT",
+      payload: data.reply
+    }, location.origin);
+
+  } catch (err) {
+    log("❌ 解析エラー");
+    console.error(err);
+  }
+}
+
+/* =====================================================
+   手動送信
+===================================================== */
+document.getElementById("sendBtn").addEventListener("click", () => {
+  const text = inputEl.value.trim();
+  if (!text) return;
+  inputEl.value = "";
+  analyze(text);
+});
+</script>
 </body>
 </html>
