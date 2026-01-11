@@ -59,11 +59,11 @@
     }
 
     .swipe-layer {
-      position: absolute;
-      inset: 0;
-      z-index: 10;
-      pointer-events: none;
-    }
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: none;   /* ← ここ重要 */
+}
 
     #controls {
       margin: 12px;
@@ -265,23 +265,24 @@
 
 
     /* ===== render（表示制御のみ） ===== */
-   function render(){
-  cardMap.forEach(v=>{
+     function render() {
+  cardMap.forEach(v => {
     v.el.classList.remove("visible");
   });
 
-  getVisibleIndices().forEach(i=>{
+  getVisibleIndices().forEach(i => {
     const card = deck[i];
     const entry = cardMap.get(card.id);
-    if(entry){
-      entry.el.classList.add("visible");
+    if (!entry) return;
 
-      // ★ここ重要
-      entry.overlay.style.pointerEvents =
-        overlayEnabled ? "auto" : "none";
-    }
+    entry.el.classList.add("visible");
+
+    // ★ overlay を「存在させる / させない」
+    entry.overlay.style.display =
+      overlayEnabled ? "block" : "none";
   });
 }
+
 
 
 
