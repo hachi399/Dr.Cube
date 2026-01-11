@@ -163,6 +163,21 @@
     overlayEnabled = false;
     render();
   }
+    window.addEventListener("message", e => {
+  if (e.data.type === "IFRAME_READY") {
+    const iframe = [...document.querySelectorAll("iframe")]
+      .find(f => f.contentWindow === e.source);
+
+    if (iframe) {
+      sendToIframe(
+        iframe,
+        "INIT",
+        { cardType: iframe.dataset.cardType }
+      );
+    }
+  }
+});
+
 
   if (type === "IFRAME_INTERACT_END") {
     overlayEnabled = true;
