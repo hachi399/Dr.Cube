@@ -155,51 +155,45 @@
   });
 }
 
-    window.addEventListener("message", event => {
+ window.addEventListener("message", event => {
   if (event.origin !== location.origin) return;
+
   const { type, payload } = event.data || {};
+
+  // iframe → ready
+  if (type === "IFRAME_READY") {
+    const iframe = [...document.querySelectorAll("iframe")]
+      .find(f => f.contentWindow === event.source);
+
+    if (iframe) {
+      sendToIframe(iframe, "INIT", {
+        cardType: iframe.dataset.cardType
+      });
+    }
+    return;
+  }
 
   if (type === "IFRAME_INTERACT_START") {
     overlayEnabled = false;
     render();
+    return;
   }
-    window.addEventListener("message", e => {
-  if (e.data.type === "IFRAME_READY") {
-    const iframe = [...document.querySelectorAll("iframe")]
-      .find(f => f.contentWindow === e.source);
-
-    if (iframe) {
-      sendToIframe(
-        iframe,
-        "INIT",
-        { cardType: iframe.dataset.cardType }
-      );
-    }
-  }
-});
-
 
   if (type === "IFRAME_INTERACT_END") {
     overlayEnabled = true;
     render();
+    return;
   }
 
-  const allowedTypes = [
-    'IMAGE_RESULT',
-    'IDEA_RESULT',
-    'ANALYSIS_RESULT'
-  ];
-
-  if (allowedTypes.includes(type)) {
+  if (["IMAGE_RESULT", "IDEA_RESULT", "ANALYSIS_RESULT"].includes(type)) {
     saveResult(payload, event.source);
+    return;
   }
 
-  if (type === 'SAVE_SUCCESS') {
-    showSuccessAlert(payload);
+  if (type === "SAVE_SUCCESS") {
+    alert("保存成功");
   }
 });
-
-
     openDB();
 
     const logEl = document.getElementById("log");
