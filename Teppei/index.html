@@ -191,7 +191,7 @@
       image: "image.html"
     };
 
-    let overlayEnabled = true;
+    let overlayEnabled = false;
     let globalCount = 0;
     let centerIndex = 3;
 
@@ -235,11 +235,11 @@
   iframe.dataset.cardType = card.type;
   iframe.dataset.cardId = card.id;
 
-  iframe.addEventListener('load', () => {
+  iframe.addEventListener("load", () => {
     sendToIframe(iframe, 'INIT', { cardType: card.type });
   });
 
-  // ✅ ここに置く
+  // ✅ ここに移動
   iframe.addEventListener("pointerdown", () => {
     overlayEnabled = false;
     render();
@@ -257,47 +257,30 @@
   overlay.className = "swipe-layer";
   el.appendChild(overlay);
 
-  let startX = 0;
-  overlay.addEventListener("pointerdown", e => {
-    overlay.setPointerCapture(e.pointerId);
-    startX = e.clientX;
-  });
-
-  overlay.addEventListener("pointerup", e => {
-    const dx = e.clientX - startX;
-    if (Math.abs(dx) > 40) {
-      const index = deck.findIndex(d => d.id === card.id);
-      handleSwipe(dx, index);
-    }
-  });
-
   cardArea.appendChild(el);
   cardMap.set(card.id, { el, overlay, iframe });
 }
 
+
     /* ===== render（表示制御のみ） ===== */
-    function render() {
-  cardMap.forEach(v => {
+   function render(){
+  cardMap.forEach(v=>{
     v.el.classList.remove("visible");
   });
 
-  getVisibleIndices().forEach(i => {
+  getVisibleIndices().forEach(i=>{
     const card = deck[i];
     const entry = cardMap.get(card.id);
-    if (!entry) return;
+    if(entry){
+      entry.el.classList.add("visible");
 
-    entry.el.classList.add("visible");
-
-    // ★ imageカードは swipe-layer を完全に無効化
-    if (card.type === 'image') {
-      entry.overlay.style.display = "none";
-    } else {
-      entry.overlay.style.display = "block";
+      // ★ここ重要
       entry.overlay.style.pointerEvents =
         overlayEnabled ? "auto" : "none";
     }
   });
 }
+
 
 
     /* ===== swipe ===== */
