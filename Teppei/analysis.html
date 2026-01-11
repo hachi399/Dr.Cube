@@ -1,62 +1,169 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<title>Analysis Frame</title>
-<style>
-body {
-  margin: 0;
-  background: #121212;
-  color: #fff;
-  font-family: system-ui;
-}
-#result {
-  padding: 12px;
-}
-</style>
+  <meta charset="UTF-8">
+  <title>Analysis Frame</title>
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: radial-gradient(circle at top left, #0f2027, #203a43, #2c5364);
+      font-family: "Segoe UI", "Hiragino Sans", sans-serif;
+      color: #fff;
+    }
+
+    main {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.5em;
+      height: 100%;
+      box-sizing: border-box;
+    }
+
+    #chat {
+      width: 90%;
+      max-width: 700px;
+      flex: 1;
+      overflow-y: auto;
+      padding: 1em;
+      background: rgba(255,255,255,0.12);
+      border-radius: 16px;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+      margin-bottom: 1em;
+    }
+
+    .controls {
+      display: flex;
+      width: 90%;
+      max-width: 700px;
+      gap: 0.5em;
+    }
+
+    input {
+      flex: 1;
+      padding: 0.6em;
+      border-radius: 8px;
+      border: none;
+      font-size: 1em;
+    }
+
+    button {
+      padding: 0.6em 1em;
+      border-radius: 10px;
+      border: none;
+      background: linear-gradient(135deg, #00c6ff, #0072ff);
+      color: #fff;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:hover {
+      opacity: 0.9;
+    }
+  </style>
 </head>
 
 <body>
-<h2>🧠 ANALYSIS FRAME</h2>
-<div id="result">起動中...</div>
+<main>
+  <h2>AI 解析フレーム</h2>
+
+  <div id="chat">
+    <p>解析待機中…</p>
+  </div>
+
+  <div class="controls">
+    <input id="input" placeholder="手動解析メッセージ…" />
+    <button id="sendBtn">送信</button>
+  </div>
+</main>
 
 <script>
-console.log("analysis.html boot");
+/* =====================================================
+   状態
+===================================================== */
+let initialized = false;
+let cardType = null;
 
-const out = t => {
-  document.getElementById("result").innerHTML += `<div>${t}</div>`;
-};
+const API_URL = "https://dr-cube-1.onrender.com/chat";
 
-out("iframe 自動起動 OK");
+const chatEl = document.getElementById("chat");
+const inputEl = document.getElementById("input");
 
-/* 親からの解析要求 */
-window.addEventListener("message", e => {
+/* =====================================================
+   親との通信
+===================================================== */
+window.addEventListener("message", async (e) => {
   if (e.origin !== location.origin) return;
 
   const { type, payload } = e.data || {};
 
+  /* INIT は一度だけ */
   if (type === "INIT") {
-    out("INIT 受信");
+    if (initialized) return;
+    initialized = true;
+    cardType = payload.cardType;
+    log(`INIT 完了（type=${cardType}）`);
+    return;
   }
 
-  if (type === "ANALYSIS_REQUEST") {
-    out("解析要求受信");
-    out(JSON.stringify(payload));
-
-    // 親へ返す
-    parent.postMessage({
-      type: "ANALYSIS_RESULT",
-      payload: "解析完了"
-    }, location.origin);
+  /* DB_UPDATE → AI解析 */
+  if (type === "DB_UPDATE") {
+    if (!initialized) return;
+    await analyze(JSON.stringify(payload));
   }
 });
 
-/* 即 READY */
-parent.postMessage(
-  { type: "IFRAME_READY", frame: "analysis" },
+/* 親に ready を通知 */
+window.parent.postMessage(
+  { type: "IFRAME_READY" },
   location.origin
 );
+
+/* =====================================================
+   UI & AI
+===================================================== */
+function log(text) {
+  chatEl.innerHTML += `<p>${text}</p>`;
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
+
+async function analyze(message) {
+  log(`<b>解析対象:</b> ${message}`);
+
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message })
+    });
+
+    const data = await res.json();
+    log(`<b>AI解析:</b> ${data.reply}`);
+
+    parent.postMessage({
+      type: "ANALYSIS_RESULT",
+      payload: data.reply
+    }, location.origin);
+
+  } catch (err) {
+    log("❌ 解析エラー");
+    console.error(err);
+  }
+}
+
+/* =====================================================
+   手動送信
+===================================================== */
+document.getElementById("sendBtn").addEventListener("click", () => {
+  const text = inputEl.value.trim();
+  if (!text) return;
+  inputEl.value = "";
+  analyze(text);
+});
 </script>
 </body>
 </html>
-
