@@ -98,7 +98,6 @@
 // ==========================================
 // ユーザー設定 (Pythonコード準拠)
 // ==========================================
-// ↓ まず、スクリプトの先頭あたり（const定義の並び）にAPIのURLを定義しておくと便利よ
 const API_URL = "https://dr-cube-1.onrender.com/chat";
 
 const REAL_IPD = 0.064;      // [m]
@@ -237,7 +236,7 @@ class StorageDB {
             }))
         );
 
-        // ✅ グローバル状態を直接リセット
+        // グローバル状態を直接リセット
         calibrationData = [];
         currentModel = null;
         samplingBuffer = [];
@@ -389,7 +388,7 @@ function get_eye_center_by_ellipse(lm, ids, w, h) {
     const mat = cv.matFromArray(pointsArray.length/2, 1, cv.CV_32SC2, pointsArray);
     try {
         if (pointsArray.length/2 < 5) { mat.delete(); return null; }
-        const ellipse = cv.fitEllipse(mat); // returns RotatedRect: center, size, angle
+        const ellipse = cv.fitEllipse(mat); 
         const center = [ellipse.center.x, ellipse.center.y];
         mat.delete();
         return center;
@@ -400,7 +399,7 @@ function get_eye_center_by_ellipse(lm, ids, w, h) {
 }
 
 // ==========================================
-// 回帰学習ロジック (指定準拠)
+// 多層パーセプトロン（MLP）
 // ==========================================
 function normalizeInput(c) {
   return [
@@ -479,11 +478,10 @@ function solveLeastSquares(A_data, Y_data, rows, cols) {
         matAtY = new cv.Mat();
         cv.gemm(matAt, matY, 1, new cv.Mat(), 0, matAtY);
 
-        // --- ★ 修正箇所：正則化 (Ridge) を安全に行う ---
+        // --- 正則化 (Ridge) を安全に行う ---
         // BindingErrorを避けるため、対角成分に直接 alpha を足します
         let alpha = 1e-4;
         for (let i = 0; i < cols; i++) {
-            // doubleAt(row, col) で現在の値を取得して alpha を足して書き戻す
             let currentVal = matAtA.doubleAt(i, i);
             matAtA.doublePtr(i, i)[0] = currentVal + alpha;
         }
@@ -526,7 +524,7 @@ let calibrationMode = false;
 let trainMode = false;
 let calibIndex = 0;
 let isSampling = false;
-let activeGaze3D = null; // 最新の3D視線
+let activeGaze3D = null; 
 let activeGazeDir = null;
 let activeEyeCenter = null; // L_C
 let activeIris3D    = null; // L_I
@@ -572,7 +570,7 @@ async function startApp() {
     calibrationData = await db.loadCalibData() || [];
     //currentModel = await db.loadModel();
 
-    // ★ 状態を復元に合わせて決める
+    // 状態を復元に合わせて決める
     if (calibrationData.length >= MIN_CALIB_POINTS) {
         calibIndex = calibrationData.length;
         console.log("Training...");
@@ -702,11 +700,11 @@ async function undistortFishFrame(videoFish) {
     let rect = new cv.Rect(x0, y0, cw, ch);
     let cropped = dst.roi(rect);
 
-    // リサイズ（必要ならキャンバスサイズに合わせる）
+    // リサイズ
     let finalOutput = new cv.Mat();
     cv.resize(cropped, finalOutput, new cv.Size(videoFish.videoWidth, videoFish.videoHeight), 0, 0, cv.INTER_LINEAR);
 
-    // メモリ解放（Matのコピーは返すので finalOutput は呼び出し側で delete する）
+    // メモリ解放
     src.delete(); dst.delete(); cropped.delete();
     map1.delete(); map2.delete(); K.delete(); D.delete(); new_K.delete();
 
@@ -1106,7 +1104,6 @@ async function saveSnapshotFromCanvas(sourceCanvas, sx, sy, sw, sh) {
     statusFish.innerText = "⌛ AI解析中...";
 
     try {
-        // 🔹 Canvas → Base64（JPEG 0.75で十分軽量）
         const base64Image = tempCanvas.toDataURL("image/png");
 
         // 🔹 API送信用 JSON
@@ -1173,7 +1170,7 @@ let cropRect = {x:0, y:0, w:0, h:0};
 const canvasEdit = document.getElementById('canvas-edit');
 const ctxEdit = canvasEdit.getContext('2d');
 
-// --- エディタの描画更新関数 (window.onloadの外に置いてOK) ---
+// --- エディタの描画更新関数  ---
 function updateEditCanvas() {
     if(!editImageData) return;
     
@@ -1230,7 +1227,7 @@ function getCanvasPos(e, canvas) {
 window.onload = async () => {
     await db.open();
 
-    // ★ 起動時にカメラ一覧を作る（復元もここ）
+    // 起動時にカメラ一覧を作る
     await setupCameraSelectors();
 
     document.getElementById("btn-start").addEventListener("click", async () => {
@@ -1282,12 +1279,10 @@ window.onload = async () => {
     const triggerSnap = async () => {
         // currentModelやsnapBufferのチェック
         if(!currentModel) {
-             //alert("学習を先に完了させてね"); 
              console.warn("[Snap] aborted: model not trained");
              return; 
         }
         if(snapBuffer.length < 1) { 
-            //alert("視線を認識させてから押してね");
             console.warn("[Snap] aborted: snapBuffer empty");
             return; 
         }
@@ -1346,7 +1341,7 @@ window.onload = async () => {
             };
 
             // ======== ログ出力 ========
-            console.group("📸 Snapshot Triggered");
+            console.group(" Snapshot Triggered");
             console.log("snapBuffer length:", snapBuffer.length);
             console.log("meanEye:", meanEye);
             console.log("gaze uv (fish):", `u=${uv[0]}, v=${uv[1]}`);
@@ -1509,14 +1504,14 @@ window.onload = async () => {
     // 学習 (t)
     const triggerTrain = async () => {
         if(calibrationData.length < MIN_CALIB_POINTS) {
-            //alert(`データ不足です (${MIN_CALIB_POINTS}点必要)`); return;
+          console.log("データ不足");
+          return;
         }
         console.log("Training...");
         const model = await train_model_from_calib_DL(calibrationData);
         currentModel = model;
         calibrationMode = false;
         trainMode = false;
-        //alert("学習完了！DBに保存しました。");
         snapMode = true;
         updateUI();
     };
@@ -1526,8 +1521,8 @@ window.onload = async () => {
         // window.onload の中の btn-reset-db の部分
     document.getElementById('btn-reset-db').onclick = async () => {
         if (!db.db) {
-            //alert("データベースが準備できていません。ページを再読み込みしてください。");
-            return;
+          console.log("データベースが準備できていません。ページを再読み込みしてください。");
+          return;
         }
         await db.clearAll();
         location.reload();
@@ -1537,3 +1532,4 @@ window.onload = async () => {
 </script>
 </body>
 </html>
+
