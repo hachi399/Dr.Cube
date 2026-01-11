@@ -84,6 +84,8 @@ window.addEventListener("message", e => {
     console.log("[idea] INIT received:", cardType);
 
     setup();
+    document.getElementById("seedInput").value = "IDEA";
+    generate();
   }
 
   if (type === "DB_UPDATE") {
