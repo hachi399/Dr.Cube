@@ -134,7 +134,13 @@ function createCard(card) {
   wrap.className = "iframe-wrap";
 
   const iframe = document.createElement("iframe");
-  iframe.src = PAGE_URL[card.type];
+  iframe.srcdoc =  `
+  <html>
+    <body style="background:#222;color:white">
+      <h1>${card.label}</h1>
+    </body>
+  </html>
+`;
   iframe.dataset.cardId = card.id;
 
   iframe.onload = () => {
