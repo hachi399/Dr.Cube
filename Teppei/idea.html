@@ -1,234 +1,63 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Idea Frame</title>
-
-  <style>
-    html, body {
-      margin: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #fafafa;
-      font-family: system-ui, sans-serif;
-    }
-
-    #graph {
-      width: 100vw;
-      height: 100vh;
-    }
-
-    .controls {
-      position: fixed;
-      top: 10px;
-      left: 10px;
-      z-index: 10;
-      background: rgba(255,255,255,0.95);
-      padding: 8px;
-      border-radius: 8px;
-      box-shadow: 0 6px 18px rgba(0,0,0,0.1);
-    }
-
-    button {
-      padding: 6px 12px;
-      border: none;
-      border-radius: 6px;
-      background: #ff7b50;
-      color: #fff;
-      cursor: pointer;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>Idea Frame</title>
+<style>
+body {
+  margin: 0;
+  background: #1e1e1e;
+  color: white;
+  font-family: system-ui;
+}
+#log {
+  padding: 12px;
+}
+</style>
 </head>
 
 <body>
+<h2>💡 IDEA FRAME</h2>
+<div id="log">起動中...</div>
 
-<div class="controls">
-  <button id="generateBtn">生成</button>
-</div>
-
-<input type="hidden" id="seedInput">
-
-<svg id="graph"></svg>
-
-<script src="https://d3js.org/d3.v7.min.js"></script>
 <script>
-console.log("SCRIPT STARTED");
-/* =====================================================
-   状態
-===================================================== */
-let initialized = false;
-let cardType = null;
+/* =========================
+   ① iframe 起動と同時に実行
+========================= */
+console.log("idea.html boot");
 
-let nodes = [];
-let links = [];
-let idCounter = 0;
+const log = msg => {
+  document.getElementById("log").innerHTML += `<div>${msg}</div>`;
+};
 
-const svg = d3.select("#graph");
-const width = () => window.innerWidth;
-const height = () => window.innerHeight;
+log("iframe 自動起動 OK");
 
-/* =====================================================
-   親との通信
-===================================================== */
+/* =========================
+   ② 親からのデータを受信
+========================= */
 window.addEventListener("message", e => {
   if (e.origin !== location.origin) return;
 
   const { type, payload } = e.data || {};
 
   if (type === "INIT") {
-    if (initialized) return;
-    initialized = true;
-
-    cardType = payload.cardType;
-    console.log("[idea] INIT received:", cardType);
-
-    setup();
+    log("INIT 受信: " + JSON.stringify(payload));
   }
 
   if (type === "DB_UPDATE") {
-    if (!initialized) return;
-
-    const seed =
-      payload?.text ||
-      payload?.result ||
-      payload?.message ||
-      "";
-
-    if (!seed) return;
-
-    document.getElementById("seedInput").value = seed;
-    generate();
+    log("DB_UPDATE 受信");
+    log(JSON.stringify(payload));
   }
 });
 
-/* 親に ready を通知 */
+/* =========================
+   ③ 親に「即起動完了」を通知
+========================= */
 window.parent.postMessage(
-  { type: "IFRAME_READY" },
+  { type: "IFRAME_READY", frame: "idea" },
   location.origin
 );
-
-/* =====================================================
-   D3 セットアップ
-===================================================== */
-const simulation = d3.forceSimulation()
-  .force("link", d3.forceLink().id(d => d.id).distance(60))
-  .force("charge", d3.forceManyBody().strength(-120))
-  .force("center", d3.forceCenter(width() / 2, height() / 2))
-  .on("tick", ticked);
-
-const linkG = svg.append("g");
-const nodeG = svg.append("g");
-
-function setup() {
-  svg
-    .attr("width", width())
-    .attr("height", height());
-
-  window.addEventListener("resize", () => {
-    svg
-      .attr("width", width())
-      .attr("height", height());
-    simulation.force("center", d3.forceCenter(width()/2, height()/2));
-    simulation.alpha(0.3).restart();
-  });
-}
-
-/* =====================================================
-   ノード生成
-===================================================== */
-function makeId() {
-  return "n" + (++idCounter);
-}
-
-function addNode(name, parent = null) {
-  const node = {
-    id: makeId(),
-    name,
-    x: width()/2 + Math.random()*40,
-    y: height()/2 + Math.random()*40
-  };
-
-  nodes.push(node);
-
-  if (parent) {
-    links.push({
-      source: parent.id,
-      target: node.id
-    });
-  }
-
-  return node;
-}
-
-function restart() {
-  const link = linkG.selectAll("line")
-    .data(links);
-
-  link.exit().remove();
-
-  link.enter()
-    .append("line")
-    .attr("stroke", "#ccc")
-    .merge(link);
-
-  const node = nodeG.selectAll("g")
-    .data(nodes, d => d.id);
-
-  node.exit().remove();
-
-  const enter = node.enter()
-    .append("g");
-
-  enter.append("circle")
-    .attr("r", 16)
-    .attr("fill", "#ffdca8");
-
-  enter.append("text")
-    .attr("y", 4)
-    .attr("text-anchor", "middle")
-    .attr("font-size", "11px")
-    .text(d => d.name);
-
-  simulation.nodes(nodes);
-  simulation.force("link").links(links);
-  simulation.alpha(1).restart();
-}
-
-function ticked() {
-  nodeG.selectAll("g")
-    .attr("transform", d => `translate(${d.x},${d.y})`);
-
-  linkG.selectAll("line")
-    .attr("x1", d => d.source.x)
-    .attr("y1", d => d.source.y)
-    .attr("x2", d => d.target.x)
-    .attr("y2", d => d.target.y);
-}
-
-/* =====================================================
-   生成処理
-===================================================== */
-function generate() {
-  const seed = document.getElementById("seedInput").value.trim();
-  if (!seed) return;
-
-  nodes = [];
-  links = [];
-  idCounter = 0;
-
-  const parent = addNode(seed);
-  for (let i = 0; i < 6; i++) {
-    addNode(seed + "_" + (i+1), parent);
-  }
-
-  restart();
-}
-
-document.getElementById("generateBtn")
-  .addEventListener("click", generate);
 </script>
-
 </body>
 </html>
+
