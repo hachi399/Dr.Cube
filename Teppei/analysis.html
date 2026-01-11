@@ -88,11 +88,12 @@
 
   <script>
     let cardType = null;
+    let initialized = false;
     function init(payload){
-  cardType = payload.cardType;
-  console.log("INIT received:", cardType);
+  if (initialized) return;
+  initialized = true;
 
-  // ここでイベント登録・描画開始
+  console.log("INIT OK", payload.cardType);
   setup();
 }
     function setup(){
@@ -158,6 +159,11 @@ window.addEventListener("message", e => {
     init(e.data.payload);
   }
 });
+// 親に「準備できた」と通知
+window.parent.postMessage(
+  { type: "IFRAME_READY" },
+  location.origin
+);
 
 /* 🔥 INIT 取りこぼし対策 */
 window.parent.postMessage(
