@@ -338,6 +338,18 @@
     }
   });
 }
+    // iframe にフォーカスしたら swipe 無効
+iframe.addEventListener("pointerdown", () => {
+  overlayEnabled = false;
+  render();
+});
+
+// iframe から外れたら swipe 復活
+iframe.addEventListener("pointerleave", () => {
+  overlayEnabled = true;
+  render();
+});
+
 
     /* ===== 初期化 ===== */
     deck.forEach(createCard);
