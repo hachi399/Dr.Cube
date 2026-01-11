@@ -88,14 +88,17 @@ let globalCount = 0;
 /* =====================================================
    データ
 ===================================================== */
+let uid = 0;
+const genId = () => "card-" + uid++;
+
 const deck = [
-  { id: crypto.randomUUID(), type: 'analysis', label: '解析(4)' },
-  { id: crypto.randomUUID(), type: 'analysis', label: '解析(6)' },
-  { id: crypto.randomUUID(), type: 'idea', label: '発想(5)' },
-  { id: crypto.randomUUID(), type: 'image', label: '画像' },
-  { id: crypto.randomUUID(), type: 'analysis', label: '解析(2)' },
-  { id: crypto.randomUUID(), type: 'idea', label: '発想(3)' },
-  { id: crypto.randomUUID(), type: 'idea', label: '発想(1)' }
+  { id: genId(), type: 'analysis', label: '解析(4)' },
+  { id: genId(), type: 'analysis', label: '解析(6)' },
+  { id: genId(), type: 'idea', label: '発想(5)' },
+  { id: genId(), type: 'image', label: '画像' },
+  { id: genId(), type: 'analysis', label: '解析(2)' },
+  { id: genId(), type: 'idea', label: '発想(3)' },
+  { id: genId(), type: 'idea', label: '発想(1)' }
 ];
 
 const cardArea = document.getElementById("cardArea");
@@ -118,6 +121,7 @@ function sendToIframe(iframe, type, payload) {
    カード生成
 ===================================================== */
 function createCard(card) {
+  console.log("createCard:", card);
   const el = document.createElement("div");
   el.className = "card";
   el.dataset.index = deck.indexOf(card);
