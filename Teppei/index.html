@@ -122,6 +122,9 @@ function sendToIframe(iframe, type, payload) {
 ===================================================== */
 function createCard(card) {
   console.log("createCard:", card);
+  
+  
+  
   const el = document.createElement("div");
   el.className = "card";
   el.dataset.index = deck.indexOf(card);
@@ -134,13 +137,13 @@ function createCard(card) {
   wrap.className = "iframe-wrap";
 
   const iframe = document.createElement("iframe");
-  iframe.srcdoc =  `
-  <html>
-    <body style="background:#222;color:white">
-      <h1>${card.label}</h1>
-    </body>
-  </html>
-`;
+        iframe.srcdoc =  `
+          <html>
+            <body style="background:#222;color:white">
+              <h1>${card.label}</h1>
+            </body>
+          </html>
+        `;
   iframe.dataset.cardId = card.id;
 
   iframe.onload = () => {
@@ -149,6 +152,25 @@ function createCard(card) {
 
   const overlay = document.createElement("div");
   overlay.className = "swipe-layer";
+
+  let startX = 0;
+
+el.addEventListener("pointerdown", e => {
+  startX = e.clientX;
+  el.setPointerCapture(e.pointerId);
+});
+
+el.addEventListener("pointerup", e => {
+  const dist = e.clientX - startX;
+
+  if (Math.abs(dist) > 80) {
+    const index = deck.findIndex(c => c.id === card.id);
+    if (index !== -1) {
+      handleSwipe(dist, index);
+    }
+  }
+});
+
 
   wrap.appendChild(iframe);
   el.append(label, wrap, overlay);
@@ -175,14 +197,13 @@ function render() {
 /* =====================================================
    swipe 処理
 ===================================================== */
-console.log("SWIPE!", dist, index);
 
 function handleSwipe(dist, index) {
   const type = dist > 0 ? "idea" : "analysis";
   globalCount++;
 
   const card = {
-    id: crypto.randomUUID(),
+    id: genId(),
     type,
     label: type === "idea" ? `発想(${globalCount})` : `解析(${globalCount})`
   };
