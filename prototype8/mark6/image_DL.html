@@ -455,62 +455,6 @@ function gaze3d_dir_to_fish_DL(center, dir, model) {
 }
 
 
-function solveLeastSquares(A_data, Y_data, rows, cols) {
-    if (!window.cv || !cv.Mat) return new Array(cols).fill(0);
-
-    let matA = null, matY = null, matX = null;
-    let matAt = null, matAtA = null, matAtY = null;
-
-    try {
-        const yMax = Math.max(...Y_data.map(Math.abs)) || 1.0;
-        const scaledY = Y_data.map(y => y / yMax);
-
-        matA = cv.matFromArray(rows, cols, cv.CV_64F, new Float64Array(A_data));
-        matY = cv.matFromArray(rows, 1, cv.CV_64F, new Float64Array(scaledY));
-        matX = new cv.Mat();
-
-        matAt = new cv.Mat();
-        cv.transpose(matA, matAt);
-        
-        matAtA = new cv.Mat();
-        cv.gemm(matAt, matA, 1, new cv.Mat(), 0, matAtA);
-        
-        matAtY = new cv.Mat();
-        cv.gemm(matAt, matY, 1, new cv.Mat(), 0, matAtY);
-
-        // --- 正則化 (Ridge) を安全に行う ---
-        // BindingErrorを避けるため、対角成分に直接 alpha を足します
-        let alpha = 1e-4;
-        for (let i = 0; i < cols; i++) {
-            let currentVal = matAtA.doubleAt(i, i);
-            matAtA.doublePtr(i, i)[0] = currentVal + alpha;
-        }
-        // --- 計算実行 ---
-        let solved = cv.solve(matAtA, matAtY, matX, cv.DECOMP_QR);
-        if (!solved) {
-            solved = cv.solve(matAtA, matAtY, matX, cv.DECOMP_SVD);
-        }
-        if (!solved) {
-            console.warn("cv.solve failed to find a solution.");
-            return new Array(cols).fill(0);
-        }
-        const result = [];
-        for(let i=0; i<cols; i++) {
-            result.push(matX.doubleAt(i, 0) * yMax);
-        }
-        return result;
-
-    } catch(e) {
-        console.error("OpenCV Solve Error (Fixed):", e);
-        return new Array(cols).fill(0);
-    } finally {
-        // メモリ解放（isDeletedチェックを入れて安全に）
-        const mats = [matA, matY, matX, matAt, matAtA, matAtY];
-        mats.forEach(m => { if(m && !m.isDeleted()) m.delete(); });
-    }
-}
-
-
 // ==========================================
 // メインアプリケーション
 // ==========================================
@@ -1532,4 +1476,5 @@ window.onload = async () => {
 </script>
 </body>
 </html>
+
 
