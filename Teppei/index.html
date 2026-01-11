@@ -137,10 +137,6 @@ function createCard(card) {
   iframe.src = PAGE_URL[card.type];
   iframe.dataset.cardId = card.id;
 
-  iframe.onload = () => {
-    sendToIframe(iframe, "INIT", { cardType: card.type });
-  };
-
   const overlay = document.createElement("div");
   overlay.className = "swipe-layer";
 
@@ -212,13 +208,19 @@ window.addEventListener("message", e => {
   if (e.origin !== location.origin) return;
 
   if (e.data?.type === "IFRAME_READY") {
-    console.log("READY:", e.data.frame);
+  const iframe = [...cardMap.values()]
+    .find(v => v.iframe.contentWindow === e.source);
 
-    e.source.postMessage({
-      type: "INIT",
-      payload: { startedAt: Date.now() }
-    }, location.origin);
-  }
+  if (!iframe) return;
+
+  iframe.iframe.contentWindow.postMessage({
+    type: "INIT",
+    payload: {
+      cardType: deck[iframe.el.dataset.index]?.type
+    }
+  }, location.origin);
+}
+
 });
 
 
