@@ -157,25 +157,35 @@
   });
 }
 
-    window.addEventListener('message', event => {
-      if (event.origin !== location.origin) return;
+    window.addEventListener("message", event => {
+  if (event.origin !== location.origin) return;
+  const { type, payload } = event.data || {};
 
-      const { type, payload } = event.data || {};
+  if (type === "IFRAME_INTERACT_START") {
+    overlayEnabled = false;
+    render();
+  }
 
-      const allowedTypes = [
-        'IMAGE_RESULT',
-        'IDEA_RESULT',
-        'ANALYSIS_RESULT'
-      ];
+  if (type === "IFRAME_INTERACT_END") {
+    overlayEnabled = true;
+    render();
+  }
 
-      if (allowedTypes.includes(type)) {
-        saveResult(payload, event.source);
-      }
+  const allowedTypes = [
+    'IMAGE_RESULT',
+    'IDEA_RESULT',
+    'ANALYSIS_RESULT'
+  ];
 
-      if (type === 'SAVE_SUCCESS') {
-        showSuccessAlert(payload);
-      }
-    });
+  if (allowedTypes.includes(type)) {
+    saveResult(payload, event.source);
+  }
+
+  if (type === 'SAVE_SUCCESS') {
+    showSuccessAlert(payload);
+  }
+});
+
 
     openDB();
 
@@ -240,15 +250,7 @@
   });
 
   // ✅ ここに移動
-  iframe.addEventListener("pointerdown", () => {
-    overlayEnabled = false;
-    render();
-  });
-
-  iframe.addEventListener("pointerleave", () => {
-    overlayEnabled = true;
-    render();
-  });
+  
 
   wrap.appendChild(iframe);
   el.appendChild(wrap);
