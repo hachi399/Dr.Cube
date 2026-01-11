@@ -87,6 +87,17 @@
   </main>
 
   <script>
+    let cardType = null;
+    function init(payload){
+  cardType = payload.cardType;
+  console.log("INIT received:", cardType);
+
+  // ここでイベント登録・描画開始
+  setup();
+}
+    function setup(){
+  // ボタン、入力、IndexedDB反映など
+}
     const API_URL = "https://dr-cube-1.onrender.com/chat";
 
 // ✅ 親ウィンドウからの解析メッセージを受信
@@ -139,6 +150,20 @@ async function sendMessage() {
 
   chat.innerHTML += `<p><b>AI:</b> ${data.reply}</p>`;
   chat.scrollTop = chat.scrollHeight;
+
+  /* 🔥 これが重要 */
+window.addEventListener("message", e => {
+  if (e.origin !== location.origin) return;
+  if (e.data?.type === "INIT") {
+    init(e.data.payload);
+  }
+});
+
+/* 🔥 INIT 取りこぼし対策 */
+window.parent.postMessage(
+  { type: "IFRAME_READY" },
+  location.origin
+);
 
   // ✅ 親ページへ解析結果を送信
   parent.postMessage({
