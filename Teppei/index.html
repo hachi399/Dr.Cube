@@ -120,6 +120,7 @@ function sendToIframe(iframe, type, payload) {
 function createCard(card) {
   const el = document.createElement("div");
   el.className = "card";
+  el.dataset.index = deck.indexOf(card);
 
   const label = document.createElement("div");
   label.className = "card-type";
@@ -164,6 +165,8 @@ function render() {
 /* =====================================================
    swipe 処理
 ===================================================== */
+console.log("SWIPE!", dist, index);
+
 function handleSwipe(dist, index) {
   const type = dist > 0 ? "idea" : "analysis";
   globalCount++;
@@ -197,6 +200,26 @@ window.addEventListener("message", e => {
     if (index !== -1) handleSwipe(e.data.dist, index);
   }
 });
+
+/* =====================================================
+   スワイプ距離検知
+===================================================== */
+let startX = 0;
+
+el.addEventListener("pointerdown", e => {
+  startX = e.clientX;
+  el.setPointerCapture(e.pointerId);
+});
+
+el.addEventListener("pointerup", e => {
+  const dist = e.clientX - startX;
+
+  if (Math.abs(dist) > 80) { // ← スワイプ閾値
+    const index = Number(el.dataset.index);
+    handleSwipe(dist, index);
+  }
+});
+
 
 /* =====================================================
    初期化
