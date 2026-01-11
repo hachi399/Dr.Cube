@@ -220,51 +220,61 @@
 
     /* ===== 初回のみカード生成 ===== */
     function createCard(card) {
-      const el = document.createElement("div");
-      el.className = "card";
+  const el = document.createElement("div");
+  el.className = "card";
 
-      const label = document.createElement("div");
-      label.className = "card-type";
-      label.textContent = card.label;
-      el.appendChild(label);
+  const label = document.createElement("div");
+  label.className = "card-type";
+  label.textContent = card.label;
+  el.appendChild(label);
 
-      const wrap = document.createElement("div");
-      wrap.className = "iframe-wrap";
+  const wrap = document.createElement("div");
+  wrap.className = "iframe-wrap";
 
-      const iframe = document.createElement("iframe");
-      iframe.src = PAGE_URL[card.type];
-      iframe.dataset.cardType = card.type;   // ★ 重要
-      iframe.dataset.cardId = card.id;
+  const iframe = document.createElement("iframe");
+  iframe.src = PAGE_URL[card.type];
+  iframe.dataset.cardType = card.type;
+  iframe.dataset.cardId = card.id;
 
-      iframe.addEventListener('load', () => {
-        sendToIframe(iframe, 'INIT', { cardType: card.type });
-      });
+  iframe.addEventListener('load', () => {
+    sendToIframe(iframe, 'INIT', { cardType: card.type });
+  });
 
-      wrap.appendChild(iframe);
-      el.appendChild(wrap);
+  // ✅ ここに置く
+  iframe.addEventListener("pointerdown", () => {
+    overlayEnabled = false;
+    render();
+  });
 
-      const overlay = document.createElement("div");
-      overlay.className = "swipe-layer";
-      overlay.dataset.cardType = card.type;
-      el.appendChild(overlay);
+  iframe.addEventListener("pointerleave", () => {
+    overlayEnabled = true;
+    render();
+  });
 
-      let startX = 0;
-      overlay.addEventListener("pointerdown", e => {
-        overlay.setPointerCapture(e.pointerId);
-        startX = e.clientX;
-      });
+  wrap.appendChild(iframe);
+  el.appendChild(wrap);
 
-      overlay.addEventListener("pointerup", e => {
-        const dx = e.clientX - startX;
-        if (Math.abs(dx) > 40) {
-          const index = deck.findIndex(d => d.id === card.id);
-          handleSwipe(dx, index);
-        }
-      });
+  const overlay = document.createElement("div");
+  overlay.className = "swipe-layer";
+  el.appendChild(overlay);
 
-      cardArea.appendChild(el);
-      cardMap.set(card.id, { el, overlay, iframe });
+  let startX = 0;
+  overlay.addEventListener("pointerdown", e => {
+    overlay.setPointerCapture(e.pointerId);
+    startX = e.clientX;
+  });
+
+  overlay.addEventListener("pointerup", e => {
+    const dx = e.clientX - startX;
+    if (Math.abs(dx) > 40) {
+      const index = deck.findIndex(d => d.id === card.id);
+      handleSwipe(dx, index);
     }
+  });
+
+  cardArea.appendChild(el);
+  cardMap.set(card.id, { el, overlay, iframe });
+}
 
     /* ===== render（表示制御のみ） ===== */
     function render() {
@@ -338,18 +348,6 @@
     }
   });
 }
-    // iframe にフォーカスしたら swipe 無効
-iframe.addEventListener("pointerdown", () => {
-  overlayEnabled = false;
-  render();
-});
-
-// iframe から外れたら swipe 復活
-iframe.addEventListener("pointerleave", () => {
-  overlayEnabled = true;
-  render();
-});
-
 
     /* ===== 初期化 ===== */
     deck.forEach(createCard);
