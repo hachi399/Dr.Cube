@@ -61,6 +61,7 @@
       ✅ 以下はあなたの元コード（生成ロジック）
   --------------------------------------------------- */
   let cardType = null;
+  let initialized = false;
   let nodes = [];
   let links = [];
   let idCounter = 0;
@@ -81,6 +82,13 @@
 
 function setup(){
   // ボタン、入力、IndexedDB反映など
+}
+  function init(payload){
+  if (initialized) return;
+  initialized = true;
+
+  console.log("INIT OK", payload.cardType);
+  setup();
 }
   //背景
   const defs = svg.append('defs');
@@ -352,6 +360,19 @@ document.addEventListener(
       document.getElementById('seedInput').value = '';
     }
   });
+
+  window.addEventListener("message", e => {
+  if (e.origin !== location.origin) return;
+  if (e.data?.type === "INIT") {
+    init(e.data.payload);
+  }
+});
+
+// 親に「準備できた」と通知
+window.parent.postMessage(
+  { type: "IFRAME_READY" },
+  location.origin
+);
     /* 🔥 これが重要 */
 window.addEventListener("message", e => {
   if (e.origin !== location.origin) return;
