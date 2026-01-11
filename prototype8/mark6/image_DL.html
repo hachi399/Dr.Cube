@@ -1067,7 +1067,7 @@ function captureRawFishImage(video) {
     // ★ 生のフレームだけを描画
     ctx.drawImage(video, 0, 0, c.width, c.height);
 
-    return c.toDataURL("image/jpeg");
+    return c.toDataURL("image/png");
 }
 
 /* ===============================
@@ -1514,7 +1514,6 @@ window.onload = async () => {
         console.log("Training...");
         const model = await train_model_from_calib_DL(calibrationData);
         currentModel = model;
-        //await db.saveModel(model.coef_u, model.coef_v);
         calibrationMode = false;
         trainMode = false;
         //alert("学習完了！DBに保存しました。");
