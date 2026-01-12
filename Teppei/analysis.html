@@ -80,10 +80,9 @@
     <button id="sendBtn">送信</button>
   </div>
 </main>
-
 <script>
 /* =====================================================
-   状態
+   状態（※1回だけ宣言）
 ===================================================== */
 let initialized = false;
 let analyzed = false;
@@ -97,30 +96,32 @@ const inputEl = document.getElementById("input");
 /* =====================================================
    親との通信
 ===================================================== */
-let initialized = false;
-let analyzed = false;
-let cardType = null;
-
 window.addEventListener("message", async (e) => {
   if (e.origin !== location.origin) return;
 
   const { type, payload } = e.data || {};
 
+  /* 初期化のみ */
   if (type === "INIT") {
     if (initialized) return;
     initialized = true;
     cardType = payload.cardType;
     log(`INIT 完了（type=${cardType}）`);
-
-    if (!analyzed) {
-      analyzed = true;
-      analyze("初期解析");
-    }
     return;
   }
 
+  /* DB_UPDATE が唯一の自動解析トリガー */
   if (type === "DB_UPDATE") {
-    log("DB_UPDATE 受信（再解析しない）");
+    if (!initialized) return;
+
+    if (analyzed) {
+      log("DB_UPDATE 受信（解析済み）");
+      return;
+    }
+
+    analyzed = true;
+    log("DB_UPDATE → 初回自動解析");
+    analyze(JSON.stringify(payload));
   }
 });
 
@@ -157,7 +158,7 @@ async function analyze(message) {
 }
 
 /* =====================================================
-   手動送信
+   手動送信（これはOK）
 ===================================================== */
 document.getElementById("sendBtn").addEventListener("click", () => {
   const text = inputEl.value.trim();
@@ -166,11 +167,13 @@ document.getElementById("sendBtn").addEventListener("click", () => {
   analyze(text);
 });
 
+/* =====================================================
+   iframe 準備完了通知
+===================================================== */
 window.parent.postMessage(
   { type: "IFRAME_READY" },
   location.origin
 );
-
 </script>
 </body>
 </html>
