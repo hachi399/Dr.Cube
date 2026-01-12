@@ -136,6 +136,7 @@ function createCard(card) {
   const iframe = document.createElement("iframe");
   iframe.src = PAGE_URL[card.type];
   iframe.dataset.cardId = card.id;
+  iframe.dataset.cardType = card.type;
 
   const overlay = document.createElement("div");
   overlay.className = "swipe-layer";
@@ -201,6 +202,98 @@ function handleSwipe(dist, index) {
   render();
 }
 
+/* ================= IndexedDB ================= */
+const DB_NAME = 'cardDB';
+const STORE = 'analysis';
+let db = null;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE)) {
+        db.createObjectStore(STORE, {
+          keyPath: 'id',
+          autoIncrement: true
+        });
+      }
+    };
+
+    req.onsuccess = e => {
+      db = e.target.result;
+      resolve(db);
+    };
+
+    req.onerror = e => reject(e);
+  });
+}
+
+/* ===== 保存処理（sourceWindow に結果を返す） ===== */
+function saveResult(data, sourceWindow) {
+  if (!db) return;
+
+  const tx = db.transaction(STORE, 'readwrite');
+  const store = tx.objectStore(STORE);
+
+  store.add({
+    time: Date.now(),
+    data
+  });
+
+  tx.oncomplete = () => {
+    sourceWindow?.postMessage(
+      { type: 'SAVE_SUCCESS', payload: data },
+      location.origin
+    );
+
+    // 🔥 保存完了後に全 iframe へ配信
+    broadcastUpdate(data);
+  };
+
+  tx.onerror = () => {
+    sourceWindow?.postMessage(
+      { type: 'SAVE_ERROR', error: 'IndexedDB error' },
+      location.origin
+    );
+  };
+}
+
+/* ===== idea / analysis iframe へ一斉通知 ===== */
+function broadcastUpdate(data) {
+  document.querySelectorAll("iframe").forEach(ifr => {
+    const type = ifr.dataset.cardType;
+    if (type === "analysis" || type === "idea") {
+      ifr.contentWindow?.postMessage(
+        { type: "DB_UPDATE", payload: data },
+        location.origin
+      );
+    }
+  });
+}
+
+/* ================= iframe からの結果受信 ================= */
+window.addEventListener("message", event => {
+  if (event.origin !== location.origin) return;
+
+  const { type, payload } = event.data || {};
+
+  const allowedTypes = [
+    "IMAGE_RESULT",
+    "IDEA_RESULT",
+    "ANALYSIS_RESULT"
+  ];
+
+  if (allowedTypes.includes(type)) {
+    saveResult(payload, event.source);
+  }
+
+  if (type === "SAVE_SUCCESS") {
+    showSuccessAlert(payload);
+  }
+});
+
 /* =====================================================
    iframe → 親 通信
 ===================================================== */
@@ -237,6 +330,15 @@ document.getElementById("leftBtn").onclick = () => {
 document.getElementById("rightBtn").onclick = () => {
   if (centerIndex < deck.length - 1) centerIndex++, render();
 };
+
+openDB().then(() => log("IndexedDB ready"));
+
+/* ================= ログ ================= */
+const logEl = document.getElementById("log");
+function log(msg) {
+  if (logEl) logEl.textContent = msg;
+  console.log(msg);
+}
 </script>
 </body>
 </html>
