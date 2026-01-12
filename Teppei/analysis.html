@@ -82,11 +82,13 @@
 </main>
 <script>
 /* =====================================================
-   状態（※1回だけ宣言）
+   状態
 ===================================================== */
 let initialized = false;
-let analyzed = false;
+let cardId = null;
 let cardType = null;
+
+const analyzedCardMap = new Map();
 
 const API_URL = "https://dr-cube-1.onrender.com/chat";
 
@@ -101,27 +103,30 @@ window.addEventListener("message", async (e) => {
 
   const { type, payload } = e.data || {};
 
-  /* 初期化のみ */
+  /* 初期化 */
   if (type === "INIT") {
     if (initialized) return;
+
     initialized = true;
+    cardId = payload.cardId;
     cardType = payload.cardType;
-    log(`INIT 完了（type=${cardType}）`);
+
+    log(`INIT: cardId=${cardId}`);
+
+    /* まだ解析していなければ自動解析 */
+    if (!analyzedCardMap.has(cardId)) {
+      analyzedCardMap.set(cardId, true);
+      analyze(payload.data ?? "初期解析");
+    }
     return;
   }
 
-  /* DB_UPDATE が唯一の自動解析トリガー */
+  /* DB更新（再解析はしない） */
   if (type === "DB_UPDATE") {
-    if (!initialized) return;
+    log(`DB_UPDATE 受信（cardId=${payload.cardId}）`);
 
-    if (analyzed) {
-      log("DB_UPDATE 受信（解析済み）");
-      return;
-    }
-
-    analyzed = true;
-    log("DB_UPDATE → 初回自動解析");
-    analyze(JSON.stringify(payload));
+    if (payload.cardId !== cardId) return;
+    log("→ 同カードだが再解析しない");
   }
 });
 
@@ -148,7 +153,10 @@ async function analyze(message) {
 
     parent.postMessage({
       type: "ANALYSIS_RESULT",
-      payload: data.reply
+      payload: {
+        cardId,
+        result: data.reply
+      }
     }, location.origin);
 
   } catch (err) {
@@ -158,7 +166,7 @@ async function analyze(message) {
 }
 
 /* =====================================================
-   手動送信（これはOK）
+   手動解析（cardId無関係）
 ===================================================== */
 document.getElementById("sendBtn").addEventListener("click", () => {
   const text = inputEl.value.trim();
@@ -168,10 +176,10 @@ document.getElementById("sendBtn").addEventListener("click", () => {
 });
 
 /* =====================================================
-   iframe 準備完了通知
+   iframe準備完了
 ===================================================== */
 window.parent.postMessage(
-  { type: "IFRAME_READY" },
+  { type: "IFRAME_READY", cardType: "analysis" },
   location.origin
 );
 </script>
