@@ -258,14 +258,17 @@ function saveResult(data, sourceWindow) {
 }
 
 /* ===== idea / analysis iframe へ一斉通知 ===== */
-function broadcastUpdate(data, sourceWindow) {
+function broadcastUpdate(payload, sourceWindow) {
   document.querySelectorAll("iframe").forEach(ifr => {
-    if (ifr.contentWindow === sourceWindow) return; // 🔥 自分には返さない
+    if (ifr.contentWindow === sourceWindow) return;
 
     const type = ifr.dataset.cardType;
     if (type === "analysis" || type === "idea") {
       ifr.contentWindow.postMessage(
-        { type: "DB_UPDATE", payload: data },
+        {
+          type: "DB_UPDATE",
+          payload
+        },
         location.origin
       );
     }
