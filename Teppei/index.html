@@ -123,47 +123,62 @@ function sendToIframe(iframe, type, payload) {
 /* =====================================================
    カード生成
 ===================================================== */
-function createCard(card) {
-  const el = document.createElement("div");
-  el.className = "card";
-  el.dataset.cardId = card.id;
+  function startAnalysis(card) {
+    const entry = cardIframeMap.get(card.id);
+    if (!entry) return;
 
-  const label = document.createElement("div");
-  label.className = "card-type";
-  label.textContent = card.label;
+    const imageText = imageResultMap.get(card.id);
 
-  const wrap = document.createElement("div");
-  wrap.className = "iframe-wrap";
+    entry.iframe.contentWindow.postMessage({
+      type: "START_ANALYSIS",
+      payload: {
+        cardId: card.id,
+        text: imageText ?? "画像生成結果がまだありません"
+      }
+    }, location.origin);
+  }
 
-  const iframe = document.createElement("iframe");
-  iframe.src = PAGE_URL[card.type];
-  iframe.dataset.cardId = card.id;
-  iframe.dataset.cardType = card.type;
+  function createCard(card) {
+    const el = document.createElement("div");
+    el.className = "card";
+    el.dataset.cardId = card.id;
 
-  const overlay = document.createElement("div");
-  overlay.className = "swipe-layer";
+    const label = document.createElement("div");
+    label.className = "card-type";
+    label.textContent = card.label;
 
-  let startX = 0;
+    const wrap = document.createElement("div");
+    wrap.className = "iframe-wrap";
 
-  el.addEventListener("pointerdown", e => {
-    startX = e.clientX;
-    el.setPointerCapture(e.pointerId);
-  });
+    const iframe = document.createElement("iframe");
+    iframe.src = PAGE_URL[card.type];
+    iframe.dataset.cardId = card.id;
+    iframe.dataset.cardType = card.type;
 
-  el.addEventListener("pointerup", e => {
-    const dist = e.clientX - startX;
-    if (Math.abs(dist) > 80) {
-      const index = deck.findIndex(c => c.id === card.id);
-      if (index !== -1) handleSwipe(dist, index);
-    }
-  });
+    const overlay = document.createElement("div");
+    overlay.className = "swipe-layer";
 
-  wrap.appendChild(iframe);
-  el.append(label, wrap, overlay);
-  cardArea.appendChild(el);
+    let startX = 0;
 
-  cardMap.set(card.id, { el, iframe, overlay });
-}
+    el.addEventListener("pointerdown", e => {
+      startX = e.clientX;
+      el.setPointerCapture(e.pointerId);
+    });
+
+    el.addEventListener("pointerup", e => {
+      const dist = e.clientX - startX;
+      if (Math.abs(dist) > 80) {
+        const index = deck.findIndex(c => c.id === card.id);
+        if (index !== -1) handleSwipe(dist, index);
+      }
+    });
+
+    wrap.appendChild(iframe);
+    el.append(label, wrap, overlay);
+    cardArea.appendChild(el);
+
+    cardMap.set(card.id, { el, iframe, overlay });
+  }
 
 /* =====================================================
    render
@@ -303,6 +318,8 @@ function broadcastUpdate(payload, sourceWindow) {
 }
 
 /* ================= iframe からの結果受信 ================= */
+const imageResultMap = new Map(); // cardId -> text
+  
 window.addEventListener("message", event => {
   if (event.origin !== location.origin) return;
 
@@ -340,7 +357,14 @@ window.addEventListener("message", e => {
     if (!entry) return;
 
     const cardType = entry.iframe.dataset.cardType;
+    const { type, cardType } = e.data || {};
 
+    if (type === "IFRAME_READY" && cardType === "analysis") {
+    const entry = iframeMap.get(e.source); // iframe管理Map
+    if (!entry) return;
+
+    startAnalysis(entry.card);
+    
     entry.iframe.contentWindow.postMessage({
       type: "INIT",
       payload: {
