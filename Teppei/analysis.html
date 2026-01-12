@@ -96,32 +96,33 @@ const inputEl = document.getElementById("input");
 /* =====================================================
    親との通信
 ===================================================== */
+let initialized = false;
+let analyzed = false;
+
 window.addEventListener("message", async (e) => {
   if (e.origin !== location.origin) return;
 
   const { type, payload } = e.data || {};
 
-  /* INIT は一度だけ */
   if (type === "INIT") {
     if (initialized) return;
     initialized = true;
     cardType = payload.cardType;
     log(`INIT 完了（type=${cardType}）`);
+
+    if (!analyzed) {
+      analyzed = true;
+      analyze("初期解析");
+    }
     return;
   }
 
-  /* DB_UPDATE → AI解析 */
   if (type === "DB_UPDATE") {
     if (!initialized) return;
-    await analyze(JSON.stringify(payload));
+    log("DB_UPDATE 受信（表示更新のみ）");
   }
 });
 
-/* 親に ready を通知 */
-window.parent.postMessage(
-  { type: "IFRAME_READY" },
-  location.origin
-);
 
 /* =====================================================
    UI & AI
