@@ -127,6 +127,11 @@ window.addEventListener("message", async (e) => {
       return;
     }
 
+    if (!cardId) {
+      log("❌ cardId 未設定のため解析不可");
+      return;
+    }
+
     analyzedCardMap.set(cardId, true);
 
     log("→ 初回解析を実行");
