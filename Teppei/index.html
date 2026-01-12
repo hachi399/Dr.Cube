@@ -157,13 +157,6 @@ function createCard(card) {
     }
   });
 
-  iframe.onload = () => {
-    iframe.contentWindow.postMessage({
-      type: "INIT",
-      payload: { cardType: card.type }
-    }, location.origin);
-  };
-
   wrap.appendChild(iframe);
   el.append(label, wrap, overlay);
   cardArea.appendChild(el);
@@ -279,7 +272,6 @@ function broadcastUpdate(data, sourceWindow) {
   });
 }
 
-
 /* ================= iframe からの結果受信 ================= */
 window.addEventListener("message", event => {
   if (event.origin !== location.origin) return;
@@ -325,17 +317,6 @@ window.addEventListener("message", e => {
     }, location.origin);
   }
 });
-
-iframe.contentWindow.postMessage({
-  type: "INIT",
-  payload: {
-    cardType: "analysis",
-    cardId: 42,
-    data: "解析対象テキスト"
-  }
-}, location.origin);
-
-
 
 /* =====================================================
    初期化
