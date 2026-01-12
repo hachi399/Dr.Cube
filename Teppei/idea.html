@@ -45,7 +45,7 @@
 <body>
 
 <div class="controls">
-  <button id="generateBtn">生成</button>
+  <button id="generateBtn">再生成</button>
 </div>
 
 <input type="hidden" id="seedInput">
@@ -55,18 +55,33 @@
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script>
 /* =====================================================
+   設定
+===================================================== */
+const API_URL = "https://dr-cube-1.onrender.com/chat";
+
+/* =====================================================
    状態
 ===================================================== */
 let initialized = false;
-let cardType = null;
-
 let nodes = [];
 let links = [];
 let idCounter = 0;
 
+/* =====================================================
+   SVG & D3
+===================================================== */
 const svg = d3.select("#graph");
 const width = () => window.innerWidth;
 const height = () => window.innerHeight;
+
+const linkG = svg.append("g");
+const nodeG = svg.append("g");
+
+const simulation = d3.forceSimulation()
+  .force("link", d3.forceLink().id(d => d.id).distance(70))
+  .force("charge", d3.forceManyBody().strength(-140))
+  .force("center", d3.forceCenter(width() / 2, height() / 2))
+  .on("tick", ticked);
 
 /* =====================================================
    親との通信
@@ -80,17 +95,16 @@ window.addEventListener("message", e => {
     if (initialized) return;
     initialized = true;
 
-    cardType = payload.cardType;
-    console.log("[idea] INIT received:", cardType);
+    console.log("[idea] INIT received");
 
     setup();
-    document.getElementById("seedInput").value = "IDEA";
+
+    // 🔥 自動実行（初期ワード）
+    document.getElementById("seedInput").value = "未来";
     generate();
   }
 
-  if (type === "DB_UPDATE") {
-    if (!initialized) return;
-
+  if (type === "DB_UPDATE" && initialized) {
     const seed =
       payload?.text ||
       payload?.result ||
@@ -104,36 +118,42 @@ window.addEventListener("message", e => {
   }
 });
 
-/* 親に ready を通知 */
+/* 親に ready 通知 */
 window.parent.postMessage(
   { type: "IFRAME_READY" },
   location.origin
 );
 
 /* =====================================================
-   D3 セットアップ
+   API：連想語取得
 ===================================================== */
-const simulation = d3.forceSimulation()
-  .force("link", d3.forceLink().id(d => d.id).distance(60))
-  .force("charge", d3.forceManyBody().strength(-120))
-  .force("center", d3.forceCenter(width() / 2, height() / 2))
-  .on("tick", ticked);
+async function fetchWords(word, count = 6) {
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: `「${word}」から連想される短い単語を${count}つ、日本語で出してください。出力は単語のみ、改行かカンマで区切ってください。より突飛な連想でよろしく`
+      })
+    });
 
-const linkG = svg.append("g");
-const nodeG = svg.append("g");
+    const json = await res.json();
 
-function setup() {
-  svg
-    .attr("width", width())
-    .attr("height", height());
+    const text =
+      typeof json.reply === "string" ? json.reply :
+      typeof json.message === "string" ? json.message :
+      typeof json.text === "string" ? json.text : "";
 
-  window.addEventListener("resize", () => {
-    svg
-      .attr("width", width())
-      .attr("height", height());
-    simulation.force("center", d3.forceCenter(width()/2, height()/2));
-    simulation.alpha(0.3).restart();
-  });
+    return text
+      .split(/[,\u3001\n]+/)
+      .map(s => s.trim())
+      .filter(Boolean)
+      .slice(0, count);
+
+  } catch (err) {
+    console.error("fetchWords error", err);
+    return [];
+  }
 }
 
 /* =====================================================
@@ -147,8 +167,8 @@ function addNode(name, parent = null) {
   const node = {
     id: makeId(),
     name,
-    x: width()/2 + Math.random()*40,
-    y: height()/2 + Math.random()*40
+    x: width() / 2 + Math.random() * 40,
+    y: height() / 2 + Math.random() * 40
   };
 
   nodes.push(node);
@@ -163,6 +183,9 @@ function addNode(name, parent = null) {
   return node;
 }
 
+/* =====================================================
+   再描画
+===================================================== */
 function restart() {
   const link = linkG.selectAll("line")
     .data(links);
@@ -171,7 +194,7 @@ function restart() {
 
   link.enter()
     .append("line")
-    .attr("stroke", "#ccc")
+    .attr("stroke", "#bbb")
     .merge(link);
 
   const node = nodeG.selectAll("g")
@@ -183,8 +206,8 @@ function restart() {
     .append("g");
 
   enter.append("circle")
-    .attr("r", 16)
-    .attr("fill", "#ffdca8");
+    .attr("r", d => d.id === "n1" ? 22 : 16)
+    .attr("fill", d => d.id === "n1" ? "#ffb347" : "#ffdca8");
 
   enter.append("text")
     .attr("y", 4)
@@ -209,9 +232,9 @@ function ticked() {
 }
 
 /* =====================================================
-   生成処理
+   三段連想生成（親→子→孫）
 ===================================================== */
-function generate() {
+async function generate() {
   const seed = document.getElementById("seedInput").value.trim();
   if (!seed) return;
 
@@ -219,17 +242,37 @@ function generate() {
   links = [];
   idCounter = 0;
 
-  const parent = addNode(seed);
-  for (let i = 0; i < 6; i++) {
-    addNode(seed + "_" + (i+1), parent);
+  const root = addNode(seed);
+
+  const children = await fetchWords(seed, 5);
+
+  for (const childWord of children) {
+    const childNode = addNode(childWord, root);
+
+    const grandchildren = await fetchWords(childWord, 3);
+    for (const grandWord of grandchildren) {
+      addNode(grandWord, childNode);
+    }
   }
 
   restart();
 }
 
+/* =====================================================
+   UI
+===================================================== */
 document.getElementById("generateBtn")
   .addEventListener("click", generate);
-</script>
 
+function setup() {
+  svg.attr("width", width()).attr("height", height());
+
+  window.addEventListener("resize", () => {
+    svg.attr("width", width()).attr("height", height());
+    simulation.force("center", d3.forceCenter(width()/2, height()/2));
+    simulation.alpha(0.3).restart();
+  });
+}
+</script>
 </body>
 </html>
