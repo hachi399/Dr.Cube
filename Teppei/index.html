@@ -105,6 +105,7 @@ const deck = [
 
 const cardArea = document.getElementById("cardArea");
 const cardMap = new Map();
+const executedMap = new Map(); // cardId -> true
 
 /* =====================================================
    util
@@ -171,13 +172,39 @@ function render() {
   cardMap.forEach(v => v.el.classList.remove("visible"));
 
   getVisibleIndices().forEach(i => {
-    const entry = cardMap.get(deck[i].id);
+    const card = deck[i];
+    const entry = cardMap.get(card.id);
     if (!entry) return;
 
     entry.el.classList.add("visible");
-    entry.overlay.style.display = overlayEnabled ? "block" : "none";
+
+    // 🔥 初回のみ自動実行
+    if (!executedMap.get(card.id)) {
+      executedMap.set(card.id, true);
+
+      if (card.type === "analysis") {
+        entry.iframe.contentWindow.postMessage({
+          type: "START_ANALYSIS",
+          payload: {
+            cardId: card.id,
+            text: card.label
+          }
+        }, location.origin);
+      }
+
+      if (card.type === "idea") {
+        entry.iframe.contentWindow.postMessage({
+          type: "START_IDEA",
+          payload: {
+            cardId: card.id,
+            seed: card.label
+          }
+        }, location.origin);
+      }
+    }
   });
 }
+
 
 /* =====================================================
    swipe 処理
