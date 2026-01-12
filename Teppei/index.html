@@ -157,6 +157,13 @@ function createCard(card) {
     }
   });
 
+  iframe.onload = () => {
+    iframe.contentWindow.postMessage({
+      type: "INIT",
+      payload: { cardType: card.type }
+    }, location.origin);
+  };
+
   wrap.appendChild(iframe);
   el.append(label, wrap, overlay);
   cardArea.appendChild(el);
