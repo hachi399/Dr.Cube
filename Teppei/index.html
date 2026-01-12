@@ -246,8 +246,7 @@ function saveResult(data, sourceWindow) {
       location.origin
     );
 
-    // 🔥 保存完了後に全 iframe へ配信
-    broadcastUpdate(data);
+    broadcastUpdate(data, sourceWindow); // ★ sourceWindow を渡す
   };
 
   tx.onerror = () => {
