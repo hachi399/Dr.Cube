@@ -326,6 +326,16 @@ window.addEventListener("message", e => {
   }
 });
 
+iframe.contentWindow.postMessage({
+  type: "INIT",
+  payload: {
+    cardType: "analysis",
+    cardId: 42,
+    data: "解析対象テキスト"
+  }
+}, location.origin);
+
+
 
 /* =====================================================
    初期化
