@@ -118,10 +118,19 @@ window.addEventListener("message", async (e) => {
 
   /* DB更新（再解析はしない） */
   if (type === "DB_UPDATE") {
-    log(`DB_UPDATE 受信（cardId=${payload.cardId}）`);
-
+    if (!initialized) return;
     if (payload.cardId !== cardId) return;
-    log("→ 同カードだが再解析しない");
+
+    // 🔒 すでに解析済みなら何もしない
+    if (analyzedCardMap.get(cardId)) {
+      log("→ 解析済み、スキップ");
+      return;
+    }
+
+    analyzedCardMap.set(cardId, true);
+
+    log("→ 初回解析を実行");
+    analyze(payload.data);
   }
 });
 
