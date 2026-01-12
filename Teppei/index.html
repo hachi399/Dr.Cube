@@ -125,19 +125,7 @@ function sendToIframe(iframe, type, payload) {
 function createCard(card) {
   const el = document.createElement("div");
   el.className = "card";
-
-  const cardEntry = [...cardMap.values()]
-  .find(v => v.iframe.contentWindow === e.source);
-
-  if (!cardEntry) return;
-
-  const card = deck.find(c => c.id === cardEntry.iframe.dataset.cardId);
-  if (!card) return;
-
-  cardEntry.iframe.contentWindow.postMessage({
-    type: "INIT",
-    payload: { cardType: card.type }
-  }, location.origin);
+  el.dataset.cardId = card.id;
 
   const label = document.createElement("div");
   label.className = "card-type";
@@ -157,20 +145,17 @@ function createCard(card) {
   let startX = 0;
 
   el.addEventListener("pointerdown", e => {
-  　startX = e.clientX;
-  　el.setPointerCapture(e.pointerId);
-　});
+    startX = e.clientX;
+    el.setPointerCapture(e.pointerId);
+  });
 
-　el.addEventListener("pointerup", e => {
-  　const dist = e.clientX - startX;
-
-  　if (Math.abs(dist) > 80) {
-    　const index = deck.findIndex(c => c.id === card.id);
-    　if (index !== -1) {
-      　handleSwipe(dist, index);
-    　}
-  　}
-　});
+  el.addEventListener("pointerup", e => {
+    const dist = e.clientX - startX;
+    if (Math.abs(dist) > 80) {
+      const index = deck.findIndex(c => c.id === card.id);
+      if (index !== -1) handleSwipe(dist, index);
+    }
+  });
 
   wrap.appendChild(iframe);
   el.append(label, wrap, overlay);
@@ -318,19 +303,18 @@ window.addEventListener("message", e => {
   if (e.origin !== location.origin) return;
 
   if (e.data?.type === "IFRAME_READY") {
-  const iframe = [...cardMap.values()]
-    .find(v => v.iframe.contentWindow === e.source);
+    const entry = [...cardMap.values()]
+      .find(v => v.iframe.contentWindow === e.source);
 
-  if (!iframe) return;
+    if (!entry) return;
 
-  iframe.iframe.contentWindow.postMessage({
-    type: "INIT",
-    payload: {
-      cardType: deck[iframe.el.dataset.index]?.type
-    }
-  }, location.origin);
-}
+    const cardType = entry.iframe.dataset.cardType;
 
+    entry.iframe.contentWindow.postMessage({
+      type: "INIT",
+      payload: { cardType }
+    }, location.origin);
+  }
 });
 
 
