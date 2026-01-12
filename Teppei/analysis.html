@@ -97,6 +97,10 @@ const inputEl = document.getElementById("input");
 /* =====================================================
    親との通信
 ===================================================== */
+let initialized = false;
+let analyzed = false;
+let cardType = null;
+
 window.addEventListener("message", async (e) => {
   if (e.origin !== location.origin) return;
 
@@ -116,11 +120,9 @@ window.addEventListener("message", async (e) => {
   }
 
   if (type === "DB_UPDATE") {
-    if (!initialized) return;
-    log("DB_UPDATE 受信（表示更新のみ）");
+    log("DB_UPDATE 受信（再解析しない）");
   }
 });
-
 
 /* =====================================================
    UI & AI
