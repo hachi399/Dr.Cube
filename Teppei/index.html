@@ -71,6 +71,7 @@
   <button id="leftBtn">←</button>
   <button id="rightBtn">→</button>
 </div>
+<div id="log" style="padding:6px;font-size:12px;opacity:.6"></div>
 
 <script>
 /* =====================================================
@@ -124,7 +125,19 @@ function sendToIframe(iframe, type, payload) {
 function createCard(card) {
   const el = document.createElement("div");
   el.className = "card";
-  el.dataset.index = deck.indexOf(card);
+
+  const cardEntry = [...cardMap.values()]
+  .find(v => v.iframe.contentWindow === e.source);
+
+  if (!cardEntry) return;
+
+  const card = deck.find(c => c.id === cardEntry.iframe.dataset.cardId);
+  if (!card) return;
+
+  cardEntry.iframe.contentWindow.postMessage({
+    type: "INIT",
+    payload: { cardType: card.type }
+  }, location.origin);
 
   const label = document.createElement("div");
   label.className = "card-type";
@@ -143,7 +156,7 @@ function createCard(card) {
 
   let startX = 0;
 
-　el.addEventListener("pointerdown", e => {
+  el.addEventListener("pointerdown", e => {
   　startX = e.clientX;
   　el.setPointerCapture(e.pointerId);
 　});
@@ -287,6 +300,10 @@ window.addEventListener("message", event => {
 
   if (allowedTypes.includes(type)) {
     saveResult(payload, event.source);
+  }
+
+  function showSuccessAlert(payload) {
+    console.log("保存成功:", payload);
   }
 
   if (type === "SAVE_SUCCESS") {
