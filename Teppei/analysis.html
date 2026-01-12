@@ -88,8 +88,6 @@ let initialized = false;
 let cardId = null;
 let cardType = null;
 
-const analyzedCardMap = new Map();
-
 const API_URL = "https://dr-cube-1.onrender.com/chat";
 
 const chatEl = document.getElementById("chat");
@@ -98,44 +96,27 @@ const inputEl = document.getElementById("input");
 /* =====================================================
    親との通信
 ===================================================== */
-window.addEventListener("message", async (e) => {
+let executed = false;
+
+window.addEventListener("message", e => {
   if (e.origin !== location.origin) return;
 
   const { type, payload } = e.data || {};
 
-  /* 初期化 */
   if (type === "INIT") {
-    if (initialized) return;
-
-    initialized = true;
     cardId = payload.cardId;
-    cardType = payload.cardType;
-
-    log(`INIT: cardId=${cardId}`);
-
     return;
   }
 
-  /* DB更新（再解析はしない） */
-  if (type === "DB_UPDATE") {
-    if (!initialized) return;
-    if (payload.cardId !== cardId) return;
-
-    // 🔒 すでに解析済みなら何もしない
-    if (analyzedCardMap.get(cardId)) {
-      log("→ 解析済み、スキップ");
+  if (type === "START_ANALYSIS") {
+    if (executed) {
+      log("→ 既に解析済み");
       return;
     }
+    executed = true;
 
-    if (!cardId) {
-      log("❌ cardId 未設定のため解析不可");
-      return;
-    }
-
-    analyzedCardMap.set(cardId, true);
-
-    log("→ 初回解析を実行");
-    analyze(payload.data);
+    log("→ 自動解析開始");
+    analyze(payload.text || "内容を解析してください");
   }
 });
 
