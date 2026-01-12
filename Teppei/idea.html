@@ -86,43 +86,27 @@ const simulation = d3.forceSimulation()
 /* =====================================================
    親との通信
 ===================================================== */
+let executed = false;
+
 window.addEventListener("message", e => {
   if (e.origin !== location.origin) return;
 
   const { type, payload } = e.data || {};
 
   if (type === "INIT") {
-    if (initialized) return;
     initialized = true;
-
-    console.log("[idea] INIT received");
-
     setup();
-
-    // 🔥 自動実行（初期ワード）
-    document.getElementById("seedInput").value = "未来";
-    generate();
   }
 
-  if (type === "DB_UPDATE" && initialized) {
-    const seed =
-      payload?.text ||
-      payload?.result ||
-      payload?.message ||
-      "";
+  if (type === "START_IDEA") {
+    if (executed) return;
+    executed = true;
 
-    if (!seed) return;
-
+    const seed = payload.seed || "発想";
     document.getElementById("seedInput").value = seed;
     generate();
   }
 });
-
-/* 親に ready 通知 */
-window.parent.postMessage(
-  { type: "IFRAME_READY" },
-  location.origin
-);
 
 /* =====================================================
    API：連想語取得
