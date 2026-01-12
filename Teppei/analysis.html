@@ -86,6 +86,7 @@
    状態
 ===================================================== */
 let initialized = false;
+let analyzed = false;
 let cardType = null;
 
 const API_URL = "https://dr-cube-1.onrender.com/chat";
@@ -96,9 +97,6 @@ const inputEl = document.getElementById("input");
 /* =====================================================
    親との通信
 ===================================================== */
-let initialized = false;
-let analyzed = false;
-
 window.addEventListener("message", async (e) => {
   if (e.origin !== location.origin) return;
 
