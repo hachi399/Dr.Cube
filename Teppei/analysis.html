@@ -113,11 +113,6 @@ window.addEventListener("message", async (e) => {
 
     log(`INIT: cardId=${cardId}`);
 
-    /* まだ解析していなければ自動解析 */
-    if (!analyzedCardMap.has(cardId)) {
-      analyzedCardMap.set(cardId, true);
-      analyze(payload.data ?? "初期解析");
-    }
     return;
   }
 
