@@ -124,19 +124,19 @@ function sendToIframe(iframe, type, payload) {
    カード生成
 ===================================================== */
   function startAnalysis(card) {
-    const entry = cardIframeMap.get(card.id);
-    if (!entry) return;
+  const entry = cardMap.get(card.id);
+  if (!entry) return;
 
-    const imageText = imageResultMap.get(card.id);
+  const imageText = imageResultMap.get(card.id);
 
-    entry.iframe.contentWindow.postMessage({
-      type: "START_ANALYSIS",
-      payload: {
-        cardId: card.id,
-        text: imageText ?? "画像生成結果がまだありません"
-      }
-    }, location.origin);
-  }
+  entry.iframe.contentWindow.postMessage({
+    type: "START_ANALYSIS",
+    payload: {
+      cardId: card.id,
+      text: imageText ?? "画像生成結果がまだありません"
+    }
+  }, location.origin);
+}
 
   function createCard(card) {
     const el = document.createElement("div");
@@ -350,29 +350,27 @@ window.addEventListener("message", event => {
 window.addEventListener("message", e => {
   if (e.origin !== location.origin) return;
 
-  if (e.data?.type === "IFRAME_READY") {
-    const entry = [...cardMap.values()]
-      .find(v => v.iframe.contentWindow === e.source);
+  if (e.data?.type !== "IFRAME_READY") return;
 
-    if (!entry) return;
+  const entry = [...cardMap.values()]
+    .find(v => v.iframe.contentWindow === e.source);
 
-    const cardType = entry.iframe.dataset.cardType;
-    const { type, cardType } = e.data || {};
+  if (!entry) return;
 
-    if (type === "IFRAME_READY" && cardType === "analysis") {
-    const entry = iframeMap.get(e.source); // iframe管理Map
-    if (!entry) return;
+  // INIT を必ず送る
+  entry.iframe.contentWindow.postMessage({
+    type: "INIT",
+    payload: {
+      cardId: entry.iframe.dataset.cardId,
+      cardType: entry.iframe.dataset.cardType
+    }
+  }, location.origin);
 
-    startAnalysis(entry.card);
-    
-    entry.iframe.contentWindow.postMessage({
-      type: "INIT",
-      payload: {
-        cardId: entry.iframe.dataset.cardId,
-        cardType
-      }
-    }, location.origin);
-
+  // analysis のみ自動解析
+  if (entry.iframe.dataset.cardType === "analysis") {
+    startAnalysis({
+      id: entry.iframe.dataset.cardId
+    });
   }
 });
 
