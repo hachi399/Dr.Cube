@@ -316,8 +316,12 @@ window.addEventListener("message", e => {
 
     entry.iframe.contentWindow.postMessage({
       type: "INIT",
-      payload: { cardType }
+      payload: {
+        cardId: entry.iframe.dataset.cardId,
+        cardType
+      }
     }, location.origin);
+
   }
 });
 
