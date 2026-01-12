@@ -165,6 +165,12 @@ document.getElementById("sendBtn").addEventListener("click", () => {
   inputEl.value = "";
   analyze(text);
 });
+
+window.parent.postMessage(
+  { type: "IFRAME_READY" },
+  location.origin
+);
+
 </script>
 </body>
 </html>
