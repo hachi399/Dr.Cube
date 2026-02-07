@@ -209,7 +209,7 @@ function handleSwipe(dist, index) {
     id: genId(),
     type,
     parentId: parent.id,
-    label:　"idea"
+    label:"idea"
     ? `発想(${++globalCount})`
     : `解析(${++globalCount})`
   };
@@ -304,37 +304,35 @@ window.addEventListener("message", event => {
   const { type, payload } = event.data || {};
   if (!type) return;
 
-  if (type === "IMAGE_RESULT") {
-  imageResultMap.set(payload.cardId, payload.text);
+  /* ===== image → text 完了 ===== */
+  if (type === "IMAGE_TEXT_READY") {
 
-  const ideaCard = deck.find(
-    c => c.type === "idea" && c.parentId === payload.cardId
-  );
-  if (!ideaCard) return;
+    // idea（単語生成）
+    deck
+      .filter(c => c.type === "idea" && c.parentId === payload.cardId)
+      .forEach(c => {
+        const entry = cardMap.get(c.id);
+        if (!entry) return;
 
-  const ideaEntry = cardMap.get(ideaCard.id);
-  if (!ideaEntry) return;
+        sendToIframe(entry.iframe, "START_IDEA", {
+          cardId: c.id,
+          text: payload.text
+        });
+      });
 
-  sendToIframe(ideaEntry.iframe, "START_IDEA", {
-    cardId: ideaCard.id,
-    text: payload.text
-  });
-}
+    // analysis（直接解析）
+    deck
+      .filter(c => c.type === "analysis" && c.parentId === payload.cardId)
+      .forEach(c => {
+        const entry = cardMap.get(c.id);
+        if (!entry) return;
 
-if (type === "IDEA_RESULT") {
-  const analysisCard = deck.find(
-    c => c.type === "analysis" && c.parentId === payload.cardId
-  );
-  if (!analysisCard) return;
-
-  const analysisEntry = cardMap.get(analysisCard.id);
-  if (!analysisEntry) return;
-
-  sendToIframe(analysisEntry.iframe, "START_ANALYSIS", {
-    cardId: analysisCard.id,
-    keywords: payload.keywords
-  });
-}
+        sendToIframe(entry.iframe, "START_ANALYSIS", {
+          cardId: c.id,
+          text: payload.text
+        });
+      });
+  }
 
 });
 
