@@ -338,7 +338,22 @@ window.addEventListener("message", event => {
       }
     }, location.origin);
   }
+
+  if (type === "IDEA_RESULT") {
+  const analysisEntry = cardMap.get(payload.cardId);
+  if (!analysisEntry) return;
+
+  analysisEntry.iframe.contentWindow.postMessage({
+    type: "START_ANALYSIS",
+    payload: {
+      cardId: payload.cardId,
+      keywords: payload.keywords
+    }
+  }, location.origin);
 }
+
+}
+const analysisEntry = cardMap.get(payload.cardId);
 if (analysisEntry) {
     analysisEntry.iframe.contentWindow.postMessage({
       type: "START_ANALYSIS",
