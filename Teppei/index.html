@@ -195,24 +195,27 @@ function sendToIframe(iframe, type, payload) {
 /* =====================================================
    render
 ===================================================== */
+function getImageIndex() {
+  return deck.findIndex(c => c.type === "image");
+}
+
 function render() {
   cardMap.forEach(v => v.el.classList.remove("visible"));
 
-  if (type === "image") {
-      el.classList.add("visible");
-    }
-  
+  // 🔥 imageカードがあれば常にセンター固定
+  const imageIndex = getImageIndex();
+  if (imageIndex !== -1) {
+    centerIndex = imageIndex;
+  }
+
   getVisibleIndices().forEach(i => {
     const card = deck[i];
     const entry = cardMap.get(card.id);
     if (!entry) return;
 
     entry.el.classList.add("visible");
-
-    
   });
 }
-
 
 /* =====================================================
    swipe 処理
