@@ -201,20 +201,19 @@ function render() {
 /* =====================================================
    swipe 処理
 ===================================================== */
-
 function handleSwipe(dist, index) {
+  const parent = deck[index];
   const type = dist > 0 ? "idea" : "analysis";
-  globalCount++;
 
   const card = {
     id: genId(),
     type,
-    label: type === "idea" ? `発想(${globalCount})` : `解析(${globalCount})`
+    parentId: parent.id,
+    label: ...
   };
 
   deck.splice(index + 1, 0, card);
   createCard(card);
-
   centerIndex = index + 1;
   render();
 }
@@ -304,38 +303,37 @@ window.addEventListener("message", event => {
   if (!type) return;
 
   if (type === "IMAGE_RESULT") {
-    imageResultMap.set(payload.cardId, payload.text);
+  imageResultMap.set(payload.cardId, payload.text);
 
-    const ideaEntry = [...cardMap.values()].find(
-      v => v.iframe.dataset.cardType === "idea"
-    );
+  const ideaCard = deck.find(
+    c => c.type === "idea" && c.parentId === payload.cardId
+  );
+  if (!ideaCard) return;
 
-    if (ideaEntry) {
-      ideaEntry.iframe.contentWindow.postMessage({
-        type: "START_IDEA",
-        payload: {
-          cardId: payload.cardId,
-          text: payload.text
-        }
-      }, location.origin);
-    }
-  }
+  const ideaEntry = cardMap.get(ideaCard.id);
+  if (!ideaEntry) return;
 
-  if (type === "IDEA_RESULT") {
-    const analysisEntry = [...cardMap.values()].find(
-      v => v.iframe.dataset.cardType === "analysis"
-    );
+  sendToIframe(ideaEntry.iframe, "START_IDEA", {
+    cardId: ideaCard.id,
+    text: payload.text
+  });
+}
 
-    if (!analysisEntry) return;
+if (type === "IDEA_RESULT") {
+  const analysisCard = deck.find(
+    c => c.type === "analysis" && c.parentId === payload.cardId
+  );
+  if (!analysisCard) return;
 
-    analysisEntry.iframe.contentWindow.postMessage({
-      type: "START_ANALYSIS",
-      payload: {
-        cardId: payload.cardId,
-        keywords: payload.keywords
-      }
-    }, location.origin);
-  }
+  const analysisEntry = cardMap.get(analysisCard.id);
+  if (!analysisEntry) return;
+
+  sendToIframe(analysisEntry.iframe, "START_ANALYSIS", {
+    cardId: analysisCard.id,
+    keywords: payload.keywords
+  });
+}
+
 });
 
 /* =====================================================
