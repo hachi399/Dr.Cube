@@ -339,6 +339,15 @@ window.addEventListener("message", event => {
     }, location.origin);
   }
 }
+if (analysisEntry) {
+    analysisEntry.iframe.contentWindow.postMessage({
+      type: "START_ANALYSIS",
+      payload: {
+        cardId: payload.cardId,
+        text: payload.text
+      }
+    }, location.origin);
+  }
 });
 
 /* =====================================================
