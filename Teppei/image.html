@@ -21,24 +21,34 @@
   <pre id="out"></pre> 
   <!-- 編集済み(デバック２) -->
   
-
 <script>
 const API_URL = "https://dr-cube-1.onrender.com/chat";
 
-window.addEventListener("message", e => {
-  if (e.origin !== location.origin) return;
-  if (e.data?.type === "INIT") {
-    cardId = e.data.payload.cardId;
-    console.log("🟢 image INIT:", cardId);
-  }
-});
+let cardId = null;
+let autoStart = false;
 
+/* ================= 画像選択 ================= */
 document.getElementById("fileInput").addEventListener("change", handleFile);
 document.getElementById("sendBtn").addEventListener("click", processImage);
 
+function handleFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = ev => {
+    document.getElementById("preview").src = ev.target.result;
+
+    if (autoStart && cardId) {
+      processImage();
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+/* ================= 画像解析 ================= */
 async function processImage() {
-  if (!cardId) {
-  }
+  if (!cardId) return;
 
   const img = document.getElementById("preview").src;
   if (!img) return;
@@ -56,15 +66,11 @@ async function processImage() {
 
   parent.postMessage({
     type: "IMAGE_TEXT_READY",
-    payload: {
-      cardId,
-      text: word
-    }
+    payload: { cardId, text: word }
   }, location.origin);
 }
 
-let cardId = null;
-
+/* ================= 親からの通信 ================= */
 window.addEventListener("message", e => {
   if (e.origin !== location.origin) return;
 
@@ -72,33 +78,13 @@ window.addEventListener("message", e => {
 
   if (type === "INIT") {
     cardId = payload.cardId;
-    console.log("🟢 image INIT:", cardId);
+    console.log("🟢 INIT:", cardId);
   }
 
-  let autoStart = false;
-
-if (type === "START_IMAGE") {
-  console.log("🚀 START_IMAGE received");
-  autoStart = true;
-}
-
-  function handleFile(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = ev => {
-    const imgEl = document.getElementById("preview");
-    imgEl.src = ev.target.result;
-
-    // 🔥 ここが決定打
-    if (autoStart && cardId) {
-      processImage();
-    }
-  };
-  reader.readAsDataURL(file);
-}
-
+  if (type === "START_IMAGE") {
+    autoStart = true;
+    console.log("🚀 START_IMAGE");
+  }
 });
 </script>
 
