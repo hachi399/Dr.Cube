@@ -314,6 +314,35 @@ window.addEventListener("message", event => {
   const { type, payload } = event.data || {};
   if (!type) return;
 
+  /* ===== analysis 結果受信 ===== */
+if (type === "ANALYSIS_RESULT") {
+  const { cardId, result } = payload;
+
+  log(`📥 解析結果受信: ${cardId}`);
+
+  // 保存
+  saveResult(
+    { cardId, result, type: "analysis" },
+    event.source
+  );
+
+  // 🔥 次ノード自動生成（例：idea）
+  const parentIndex = deck.findIndex(c => c.id === cardId);
+  if (parentIndex !== -1) {
+    const card = {
+      id: genId(),
+      type: "idea",
+      parentId: cardId,
+      label: `発想(${++globalCount})`
+    };
+
+    deck.splice(parentIndex + 1, 0, card);
+    createCard(card);
+    render();
+  }
+}
+
+
   /* ===== image → text 完了 ===== */
   if (type === "IMAGE_TEXT_READY") {
 
