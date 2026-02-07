@@ -38,8 +38,6 @@ document.getElementById("sendBtn").addEventListener("click", processImage);
 
 async function processImage() {
   if (!cardId) {
-    alert("INIT 未受信");
-    return;
   }
 
   const img = document.getElementById("preview").src;
@@ -77,10 +75,30 @@ window.addEventListener("message", e => {
     console.log("🟢 image INIT:", cardId);
   }
 
-  if (type === "START_IMAGE") {
-    console.log("🚀 START_IMAGE received:", payload.cardId);
-    processImage();
-  }
+  let autoStart = false;
+
+if (type === "START_IMAGE") {
+  console.log("🚀 START_IMAGE received");
+  autoStart = true;
+}
+
+  function handleFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const imgEl = document.getElementById("preview");
+    imgEl.src = ev.target.result;
+
+    // 🔥 ここが決定打
+    if (autoStart && cardId) {
+      processImage();
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
 });
 </script>
 
