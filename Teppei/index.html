@@ -301,68 +301,44 @@ window.addEventListener("message", event => {
   if (event.origin !== location.origin) return;
 
   const { type, payload } = event.data || {};
-
-  const allowedTypes = [
-    "IMAGE_RESULT",
-    "IDEA_RESULT",
-    "ANALYSIS_RESULT"
-  ];
-
-  if (allowedTypes.includes(type)) {
-    saveResult(payload, event.source);
-  }
-
-  function showSuccessAlert(payload) {
-    console.log("保存成功:", payload);
-  }
-
-  if (type === "SAVE_SUCCESS") {
-    showSuccessAlert(payload);
-
-  }
+  if (!type) return;
 
   if (type === "IMAGE_RESULT") {
-  imageResultMap.set(payload.cardId, payload.text);
+    imageResultMap.set(payload.cardId, payload.text);
 
-  // 対応する idea iframe を探す
-  const ideaEntry = [...cardMap.values()].find(
-    v => v.iframe.dataset.cardType === "idea"
-  );
+    const ideaEntry = [...cardMap.values()].find(
+      v => v.iframe.dataset.cardType === "idea"
+    );
 
-  if (ideaEntry) {
-    ideaEntry.iframe.contentWindow.postMessage({
-      type: "START_IDEA",
-      payload: {
-        cardId: payload.cardId,
-        seed: payload.text
-      }
-    }, location.origin);
+    if (ideaEntry) {
+      ideaEntry.iframe.contentWindow.postMessage({
+        type: "START_IDEA",
+        payload: {
+          cardId: payload.cardId,
+          text: payload.text
+        }
+      }, location.origin);
+    }
   }
 
   if (type === "IDEA_RESULT") {
-  const analysisEntry = cardMap.get(payload.cardId);
-  if (!analysisEntry) return;
+    const analysisEntry = [...cardMap.values()].find(
+      v => v.iframe.dataset.cardType === "analysis"
+    );
 
-  analysisEntry.iframe.contentWindow.postMessage({
-    type: "START_ANALYSIS",
-    payload: {
-      cardId: payload.cardId,
-      keywords: payload.keywords
-    }
-  }, location.origin);
-}
+    if (!analysisEntry) return;
 
-}
-const analysisEntry = cardMap.get(payload.cardId);
-if (analysisEntry) {
     analysisEntry.iframe.contentWindow.postMessage({
       type: "START_ANALYSIS",
       payload: {
         cardId: payload.cardId,
-        text: payload.text
+        keywords: payload.keywords
       }
     }, location.origin);
   }
+});
+
+  
 });
 
 /* =====================================================
