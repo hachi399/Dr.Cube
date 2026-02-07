@@ -26,54 +26,8 @@
 let cardId = null;
 const API_URL = "https://dr-cube-1.onrender.com/chat";
 
-document.getElementById("fileInput").addEventListener("change", handleFile);
-document.getElementById("sendBtn").addEventListener("click", processImage);
-
-function handleFile(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = ev => {
-    document.getElementById("preview").src = ev.target.result;
-  };
-  reader.readAsDataURL(file);
-}
-
-async function processImage() {
-  const img = document.getElementById("preview").src;
-  if (!img) return;
-
-  const prompt = "以下の画像から読み取れる単語のみ（複数）を出力してください。画像: " + img;
-  const payload = { prompt, image: img };
-
-  try {
-    const res = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-
-    if (!res.ok) throw new Error("API Error: " + res.status);
-
-    const data = await res.json();
-    const word = data?.reply?.trim() || "(no result)";
-
-    document.getElementById("output").innerText = "結果（デバック１）: " + word;
-//--------------------------------------編集済み
-    const out = document.getElementById('out');
-    out.textContent = JSON.stringify(word, null, 2);
-
-  // 🔹 親ページへ送信
-  parent.postMessage({
-  type: "IMAGE_TEXT_READY",
-  payload: {
-    cardId: window.cardId,   // ← INIT で受け取ったやつ
-    text: word
-  }
-}, location.origin);
-
-  window.addEventListener("message", e => {
+/* ✅ INIT は最初から listen */
+window.addEventListener("message", e => {
   if (e.origin !== location.origin) return;
 
   if (e.data?.type === "INIT") {
@@ -82,22 +36,39 @@ async function processImage() {
   }
 });
 
+document.getElementById("fileInput").addEventListener("change", handleFile);
+document.getElementById("sendBtn").addEventListener("click", processImage);
+
+async function processImage() {
+  if (!cardId) {
+    alert("INIT 未受信");
+    return;
+  }
+
+  const img = document.getElementById("preview").src;
+  if (!img) return;
+
+  const payload = { prompt: "画像から単語抽出", image: img };
+
+  const res = await fetch(API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await res.json();
+  const word = data?.reply?.trim() || "(no result)";
+
   parent.postMessage({
-  type: "IMAGE_TEXT_READY",
-  payload: {
-    cardId,
-    text: word
-  }
-}, location.origin);
-
-//------------------------------------
-
-  } catch (err) {
-    console.error(err);
-    document.getElementById("output").innerText = "エラー: " + err.message;
-  }
+    type: "IMAGE_TEXT_READY",
+    payload: {
+      cardId,
+      text: word
+    }
+  }, location.origin);
 }
 </script>
+
 
 
 </body>
