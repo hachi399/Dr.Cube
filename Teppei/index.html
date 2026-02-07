@@ -307,62 +307,51 @@ window.addEventListener("message", event => {
   /* ===== image → text 完了 ===== */
   if (type === "IMAGE_TEXT_READY") {
 
-    // idea（単語生成）
-    deck
-      .filter(c => c.type === "idea" && c.parentId === payload.cardId)
-      .forEach(c => {
-        const entry = cardMap.get(c.id);
-        if (!entry) return;
+  // ① image の結果を保存
+  imageResultMap.set(payload.cardId, payload.text);
 
-        sendToIframe(entry.iframe, "START_IDEA", {
-          cardId: c.id,
-          text: payload.text
-        });
-      });
+  // ② 子カードが無ければ自動生成
+  let children = deck.filter(c => c.parentId === payload.cardId);
 
-    // analysis（直接解析）
-    deck
-      .filter(c => c.type === "analysis" && c.parentId === payload.cardId)
-      .forEach(c => {
-  if (executedMap.get(c.id)) return;
-  executedMap.set(c.id, true);
-
-  const entry = cardMap.get(c.id);
-  if (!entry) return;
-
-  sendToIframe(entry.iframe, "START_IDEA", {
-    cardId: c.id,
-    text: payload.text
-  });
-});
-
-
-    // ★ image の結果を保存
-imageResultMap.set(payload.cardId, payload.text);
-
-// ★ すでに子が無ければ自動生成
-const hasChild = deck.some(c => c.parentId === payload.cardId);
-
-if (!hasChild) {
-  ["idea", "analysis"].forEach(t => {
-    const card = {
-      id: genId(),
-      type: t,
-      parentId: payload.cardId,
-      label: t === "idea"
-        ? `発想(${++globalCount})`
-        : `解析(${++globalCount})`
-    };
-
+  if (children.length === 0) {
     const parentIndex = deck.findIndex(c => c.id === payload.cardId);
-    deck.splice(parentIndex + 1, 0, card);
-    createCard(card);
-  });
 
-  render();
+    ["idea", "analysis"].forEach(t => {
+      const card = {
+        id: genId(),
+        type: t,
+        parentId: payload.cardId,
+        label: t === "idea"
+          ? `発想(${++globalCount})`
+          : `解析(${++globalCount})`
+      };
+
+      deck.splice(parentIndex + 1, 0, card);
+      createCard(card);
+    });
+
+    render();
+    children = deck.filter(c => c.parentId === payload.cardId);
+  }
+
+  // ③ idea / analysis に送信
+  children.forEach(c => {
+    if (executedMap.get(c.id)) return;
+    executedMap.set(c.id, true);
+
+    const entry = cardMap.get(c.id);
+    if (!entry) return;
+
+    const msgType =
+      c.type === "idea" ? "START_IDEA" : "START_ANALYSIS";
+
+    sendToIframe(entry.iframe, msgType, {
+      cardId: c.id,
+      text: payload.text
+    });
+  });
 }
 
-  }
 
 });
 
