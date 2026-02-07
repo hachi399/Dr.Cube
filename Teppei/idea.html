@@ -99,13 +99,21 @@ window.addEventListener("message", e => {
   }
 
   if (type === "START_IDEA") {
-    if (executed) return;
-    executed = true;
-
-    const seed = payload.seed || "発想";
-    document.getElementById("seedInput").value = seed;
-    generate();
+  if (!initialized) {
+    console.log("⏳ INIT待ち");
+    return;
   }
+  if (executed) return;
+  executed = true;
+
+  const seed =
+    payload.text?.split(/\s|、|。|\n/).filter(Boolean)[0]
+    || "発想";
+
+  document.getElementById("seedInput").value = seed;
+  generate();
+}
+
 });
 
 /* =====================================================
