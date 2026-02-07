@@ -23,7 +23,6 @@
   
 
 <script>
-let cardId = null;
 const API_URL = "https://dr-cube-1.onrender.com/chat";
 
 window.addEventListener("message", e => {
@@ -65,6 +64,24 @@ async function processImage() {
     }
   }, location.origin);
 }
+
+let cardId = null;
+
+window.addEventListener("message", e => {
+  if (e.origin !== location.origin) return;
+
+  const { type, payload } = e.data || {};
+
+  if (type === "INIT") {
+    cardId = payload.cardId;
+    console.log("🟢 image INIT:", cardId);
+  }
+
+  if (type === "START_IMAGE") {
+    console.log("🚀 START_IMAGE received:", payload.cardId);
+    processImage();
+  }
+});
 </script>
 
 
