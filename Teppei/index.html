@@ -155,15 +155,26 @@ function sendToIframe(iframe, type, payload) {
     iframe.dataset.cardId = card.id;
     iframe.dataset.cardType = card.type;
 
-    iframe.onload = () => {
-    iframe.contentWindow.postMessage({
+   iframe.onload = () => {
+  iframe.contentWindow.postMessage({
     type: "INIT",
     payload: {
       cardId: card.id,
       cardType: card.type
     }
   }, location.origin);
+
+  if (card.type === "analysis") {
+    iframe.contentWindow.postMessage({
+      type: "START_ANALYSIS",
+      payload: {
+        cardId: card.id,
+        text: "内容を解析してください"
+      }
+    }, location.origin);
+  }
 };
+
 
     const overlay = document.createElement("div");
     overlay.className = "swipe-layer";
