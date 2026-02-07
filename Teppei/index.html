@@ -198,6 +198,10 @@ function sendToIframe(iframe, type, payload) {
 function render() {
   cardMap.forEach(v => v.el.classList.remove("visible"));
 
+  if (type === "image") {
+      el.classList.add("visible");
+    }
+  
   getVisibleIndices().forEach(i => {
     const card = deck[i];
     const entry = cardMap.get(card.id);
@@ -228,7 +232,6 @@ function handleSwipe(dist, index) {
 
   deck.splice(index + 1, 0, card);
   createCard(card);
-  centerIndex = index + 1;
   render();
 }
 
