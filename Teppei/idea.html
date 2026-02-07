@@ -257,6 +257,12 @@ function setup() {
     simulation.alpha(0.3).restart();
   });
 }
+
+window.parent.postMessage(
+  { type: "IFRAME_READY" },
+  location.origin
+);
+
 </script>
 </body>
 </html>
