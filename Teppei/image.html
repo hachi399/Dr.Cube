@@ -26,10 +26,8 @@
 let cardId = null;
 const API_URL = "https://dr-cube-1.onrender.com/chat";
 
-/* ✅ INIT は最初から listen */
 window.addEventListener("message", e => {
   if (e.origin !== location.origin) return;
-
   if (e.data?.type === "INIT") {
     cardId = e.data.payload.cardId;
     console.log("🟢 image INIT:", cardId);
