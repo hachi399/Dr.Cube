@@ -113,10 +113,7 @@ window.addEventListener("message", e => {
 
   /* ===== 解析開始 ===== */
   if (type === "START_ANALYSIS") {
-    if (!cardId) {
-      log("⏳ INIT待ち");
-      return;
-    }
+   
     if (executed) return;
     executed = true;
 
