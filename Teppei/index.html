@@ -155,6 +155,16 @@ function sendToIframe(iframe, type, payload) {
     iframe.dataset.cardId = card.id;
     iframe.dataset.cardType = card.type;
 
+    iframe.onload = () => {
+    iframe.contentWindow.postMessage({
+    type: "INIT",
+    payload: {
+      cardId: card.id,
+      cardType: card.type
+    }
+  }, location.origin);
+};
+
     const overlay = document.createElement("div");
     overlay.className = "swipe-layer";
 
@@ -358,26 +368,7 @@ window.addEventListener("message", event => {
 /* =====================================================
    iframe → 親 通信
 ===================================================== */
-window.addEventListener("message", e => {
-  if (e.origin !== location.origin) return;
 
-  if (e.data?.type !== "IFRAME_READY") return;
-
-  const entry = [...cardMap.values()]
-    .find(v => v.iframe.contentWindow === e.source);
-
-  if (!entry) return;
-
-  // INIT を必ず送る
-  entry.iframe.contentWindow.postMessage({
-    type: "INIT",
-    payload: {
-      cardId: entry.iframe.dataset.cardId,
-      cardType: entry.iframe.dataset.cardType
-    }
-  }, location.origin);
-
-});
 
 /* =====================================================
    初期化
