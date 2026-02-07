@@ -202,12 +202,6 @@ function getImageIndex() {
 function render() {
   cardMap.forEach(v => v.el.classList.remove("visible"));
 
-  // 🔥 imageカードがあれば常にセンター固定
-  const imageIndex = getImageIndex();
-  if (imageIndex !== -1) {
-    centerIndex = imageIndex;
-  }
-
   getVisibleIndices().forEach(i => {
     const card = deck[i];
     const entry = cardMap.get(card.id);
@@ -357,6 +351,10 @@ if (type === "ANALYSIS_RESULT") {
   // ① image の結果を保存
   imageResultMap.set(payload.cardId, payload.text);
 
+  const imageIndex = deck.findIndex(c => c.id === payload.cardId);
+  if (imageIndex !== -1) {
+    centerIndex = imageIndex;
+  }
   // ② 子カードが無ければ自動生成
   let children = deck.filter(c => c.parentId === payload.cardId);
 
