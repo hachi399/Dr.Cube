@@ -120,6 +120,19 @@ function sendToIframe(iframe, type, payload) {
   iframe.contentWindow?.postMessage({ type, payload }, location.origin);
 }
 
+function startImage(card) {
+  const entry = cardMap.get(card.id);
+  if (!entry) return;
+
+  entry.iframe.contentWindow.postMessage({
+    type: "START_IMAGE",
+    payload: {
+      cardId: card.id
+    }
+  }, location.origin);
+}
+
+
 /* =====================================================
    カード生成
 ===================================================== */
@@ -208,6 +221,10 @@ function render() {
     if (!entry) return;
 
     entry.el.classList.add("visible");
+
+    if (i === centerIndex && card.type === "image") {
+      startImage(card);
+    }
   });
 }
 
