@@ -103,19 +103,27 @@ window.addEventListener("message", e => {
 
   const { type, payload } = e.data || {};
 
-  if (type === "START_ANALYSIS") {
-  if (!cardId) {
-    log("⏳ INIT待ち");
+  /* ===== INIT 受信 ===== */
+  if (type === "INIT") {
+    cardId = payload.cardId;
+    cardType = payload.cardType;
+    log(`🟢 INIT完了 (${cardType})`);
     return;
   }
-  if (executed) return;
-  executed = true;
 
-  analyze(payload.text || "内容を解析してください");
-}
+  /* ===== 解析開始 ===== */
+  if (type === "START_ANALYSIS") {
+    if (!cardId) {
+      log("⏳ INIT待ち");
+      return;
+    }
+    if (executed) return;
+    executed = true;
 
-
+    analyze(payload.text || "内容を解析してください");
+  }
 });
+
 
 /* =====================================================
    UI & AI
