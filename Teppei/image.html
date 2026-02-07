@@ -23,6 +23,7 @@
   
 
 <script>
+let cardId = null;
 const API_URL = "https://dr-cube-1.onrender.com/chat";
 
 document.getElementById("fileInput").addEventListener("change", handleFile);
@@ -65,9 +66,30 @@ async function processImage() {
 
   // 🔹 親ページへ送信
   parent.postMessage({
-    type: 'IMAGE_RESULT',
-    payload: word
-  }, location.origin);
+  type: "IMAGE_TEXT_READY",
+  payload: {
+    cardId: window.cardId,   // ← INIT で受け取ったやつ
+    text: word
+  }
+}, location.origin);
+
+  window.addEventListener("message", e => {
+  if (e.origin !== location.origin) return;
+
+  if (e.data?.type === "INIT") {
+    cardId = e.data.payload.cardId;
+    console.log("🟢 image INIT:", cardId);
+  }
+});
+
+  parent.postMessage({
+  type: "IMAGE_TEXT_READY",
+  payload: {
+    cardId,
+    text: word
+  }
+}, location.origin);
+
 //------------------------------------
 
   } catch (err) {
