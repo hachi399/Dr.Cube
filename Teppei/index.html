@@ -209,7 +209,9 @@ function handleSwipe(dist, index) {
     id: genId(),
     type,
     parentId: parent.id,
-    label: ...
+    label:　"idea"
+    ? `発想(${++globalCount})`
+    : `解析(${++globalCount})`
   };
 
   deck.splice(index + 1, 0, card);
