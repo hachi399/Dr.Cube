@@ -48,10 +48,11 @@ function handleFile(e) {
 
 /* ================= 画像解析 ================= */
 async function processImage() {
-  if (!cardId) return;
-
   const img = document.getElementById("preview").src;
-  if (!img) return;
+  if (!img) {
+    alert("画像が選択されていません");
+    return;
+  }
 
   const payload = { prompt: "画像から単語抽出", image: img };
 
@@ -61,22 +62,30 @@ async function processImage() {
     body: JSON.stringify(payload)
   });
 
+  if (!res.ok) {
+    document.getElementById("output").textContent =
+      "API error: " + res.status;
+    return;
+  }
+
   const data = await res.json();
-  // ★ APIの返答を確認
   console.log("API response:", data);
 
-  const word = data?.reply?.trim() || "(no result)";
+  const word = data?.reply ?? "(no reply field)";
 
-  // ★ 画面に表示する
   document.getElementById("output").textContent = word;
-  document.getElementById("out").textContent = JSON.stringify(data, null, 2);
+  document.getElementById("out").textContent =
+    JSON.stringify(data, null, 2);
 
-  // 親にも送信（これはそのままでOK）
-  parent.postMessage({
-    type: "IMAGE_TEXT_READY",
-    payload: { cardId, text: word }
-  }, location.origin);
+  // 親がいるときだけ送る
+  if (cardId) {
+    parent.postMessage({
+      type: "IMAGE_TEXT_READY",
+      payload: { cardId, text: word }
+    }, location.origin);
+  }
 }
+
 
 /* ================= 親からの通信 ================= */
 window.addEventListener("message", e => {
