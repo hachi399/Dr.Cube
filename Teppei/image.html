@@ -76,13 +76,6 @@ async function processImage() {
     type: "IMAGE_TEXT_READY",
     payload: { cardId, text: word }
   }, location.origin);
-    
-  const word = data?.reply?.trim() || "(no result)";
-
-  parent.postMessage({
-    type: "IMAGE_TEXT_READY",
-    payload: { cardId, text: word }
-  }, location.origin);
 }
 
 /* ================= 親からの通信 ================= */
