@@ -87,6 +87,14 @@ let overlayEnabled = false;
 let centerIndex = 3;
 let globalCount = 0;
 
+let analysisCount = 0;
+let ideaCount = 0;
+
+function resetChildCounters() {
+  analysisCount = 0;
+  ideaCount = 0;
+}
+
 /* =====================================================
    データ
 ===================================================== */
@@ -132,6 +140,36 @@ function startImage(card) {
   }, location.origin);
 }
 
+function spawnFromCard(sourceCard) {
+  const parentIndex = deck.findIndex(c => c.id === sourceCard.id);
+
+  const newCard = {
+    id: genId(),
+    type: sourceCard.type,
+    parentId: sourceCard.parentId,
+    label:
+      sourceCard.type === "analysis"
+        ? `解析(${++analysisCount})`
+        : `発想(${++ideaCount})`,
+    sourceText: sourceCard.sourceText
+  };
+
+  deck.splice(parentIndex + 1, 0, newCard);
+  createCard(newCard);
+  render();
+
+  const entry = cardMap.get(newCard.id);
+  sendToIframe(
+    entry.iframe,
+    sourceCard.type === "analysis"
+      ? "START_ANALYSIS"
+      : "START_IDEA",
+    {
+      cardId: newCard.id,
+      text: sourceCard.sourceText
+    }
+  );
+}
 
 /* =====================================================
    カード生成
@@ -153,6 +191,12 @@ function startImage(card) {
 
   function createCard(card) {
     const el = document.createElement("div");
+    el.setAttribute("draggable", true);
+
+el.addEventListener("dragstart", e => {
+  e.preventDefault(); // 移動しない
+});
+    
     el.className = "card";
     el.dataset.cardId = card.id;
 
@@ -198,6 +242,13 @@ function startImage(card) {
       }
     });
 
+    el.addEventListener("pointerup", e => {
+  if (Math.abs(e.clientX - startX) > 40) {
+    spawnFromCard(card);
+  }
+});
+
+
     wrap.appendChild(iframe);
     el.append(label, wrap, overlay);
     cardArea.appendChild(el);
@@ -213,6 +264,9 @@ function getImageIndex() {
 }
 
 function render() {
+  const imageIndex = getImageIndex();
+  centerIndex = imageIndex; // ★ 常に image をセンターにする
+
   cardMap.forEach(v => v.el.classList.remove("visible"));
 
   getVisibleIndices().forEach(i => {
@@ -222,11 +276,12 @@ function render() {
 
     entry.el.classList.add("visible");
 
-    if (i === centerIndex && card.type === "image") {
+    if (card.type === "image") {
       startImage(card);
     }
   });
 }
+
 
 /* =====================================================
    swipe 処理
@@ -236,13 +291,15 @@ function handleSwipe(dist, index) {
   const type = dist > 0 ? "idea" : "analysis";
 
   const card = {
-    id: genId(),
-    type,
-    parentId: parent.id,
-    label:type === "idea"
-    ? `発想(${++globalCount})`
-    : `解析(${++globalCount})`
-  };
+  id: genId(),
+  type,
+  parentId: parent.id,
+  label: type === "idea"
+    ? `発想(${++ideaCount})`
+    : `解析(${++analysisCount})`,
+  sourceText: parent.sourceText
+};
+
 
   deck.splice(index + 1, 0, card);
   createCard(card);
@@ -353,6 +410,7 @@ if (type === "ANALYSIS_RESULT") {
       type: "idea",
       parentId: cardId,
       label: `発想(${++globalCount})`
+      sourceText: result
     };
 
     deck.splice(parentIndex + 1, 0, card);
@@ -364,7 +422,7 @@ if (type === "ANALYSIS_RESULT") {
 
   /* ===== image → text 完了 ===== */
   if (type === "IMAGE_TEXT_READY") {
-
+   resetChildCounters();
   // ① image の結果を保存
   imageResultMap.set(payload.cardId, payload.text);
 
@@ -378,15 +436,18 @@ if (type === "ANALYSIS_RESULT") {
   if (children.length === 0) {
     const parentIndex = deck.findIndex(c => c.id === payload.cardId);
 
+    resetChildCounters();
     ["idea", "analysis"].forEach(t => {
-      const card = {
-        id: genId(),
-        type: t,
-        parentId: payload.cardId,
-        label: t === "idea"
-          ? `発想(${++globalCount})`
-          : `解析(${++globalCount})`
-      };
+  const card = {
+    id: genId(),
+    type: t,
+    parentId: payload.cardId,
+    label: t === "idea"
+      ? `発想(${++ideaCount})`
+      : `解析(${++analysisCount})`,
+    sourceText: payload.text
+  };
+
 
       deck.splice(parentIndex + 1, 0, card);
       createCard(card);
