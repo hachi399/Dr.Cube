@@ -235,18 +235,16 @@ el.addEventListener("dragstart", e => {
     });
 
     el.addEventListener("pointerup", e => {
-      const dist = e.clientX - startX;
-      if (Math.abs(dist) > 80) {
-        const index = deck.findIndex(c => c.id === card.id);
-        if (index !== -1) handleSwipe(dist, index);
-      }
-    });
+  const dist = e.clientX - startX;
 
-    el.addEventListener("pointerup", e => {
-  if (Math.abs(e.clientX - startX) > 40) {
+  if (Math.abs(dist) > 80) {
+    const index = deck.findIndex(c => c.id === card.id);
+    if (index !== -1) handleSwipe(dist, index);
+  } else if (Math.abs(dist) > 40) {
     spawnFromCard(card);
   }
 });
+
 
 
     wrap.appendChild(iframe);
@@ -265,7 +263,9 @@ function getImageIndex() {
 
 function render() {
   const imageIndex = getImageIndex();
-  centerIndex = imageIndex; // ★ 常に image をセンターにする
+  if (imageIndex !== -1) {
+    centerIndex = imageIndex;
+  }
 
   cardMap.forEach(v => v.el.classList.remove("visible"));
 
@@ -281,6 +281,7 @@ function render() {
     }
   });
 }
+
 
 
 /* =====================================================
@@ -409,7 +410,7 @@ if (type === "ANALYSIS_RESULT") {
       id: genId(),
       type: "idea",
       parentId: cardId,
-      label: `発想(${++globalCount})`
+      label: `発想(${++globalCount})`,
       sourceText: result
     };
 
