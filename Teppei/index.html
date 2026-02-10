@@ -102,14 +102,9 @@ let uid = 0;
 const genId = () => "card-" + uid++;
 
 const deck = [
-  { id: genId(), type: 'analysis', label: '解析(4)' },
-  { id: genId(), type: 'analysis', label: '解析(6)' },
-  { id: genId(), type: 'idea', label: '発想(5)' },
-  { id: genId(), type: 'image', label: '画像' },
-  { id: genId(), type: 'analysis', label: '解析(2)' },
-  { id: genId(), type: 'idea', label: '発想(3)' },
-  { id: genId(), type: 'idea', label: '発想(1)' }
+  { id: genId(), type: 'image', label: '画像' }
 ];
+
 
 const cardArea = document.getElementById("cardArea");
 const cardMap = new Map();
@@ -215,10 +210,7 @@ el.addEventListener("dragstart", e => {
    iframe.onload = () => {
   iframe.contentWindow.postMessage({
     type: "INIT",
-    payload: {
-      cardId: card.id,
-      cardType: card.type
-    }
+    payload: {cardId: card.id,}
   }, location.origin);
 
 };
@@ -236,14 +228,12 @@ el.addEventListener("dragstart", e => {
 
     el.addEventListener("pointerup", e => {
   const dist = e.clientX - startX;
+  if (Math.abs(dist) < 40) return;
 
-  if (Math.abs(dist) > 80) {
-    const index = deck.findIndex(c => c.id === card.id);
-    if (index !== -1) handleSwipe(dist, index);
-  } else if (Math.abs(dist) > 40) {
-    spawnFromCard(card);
-  }
-});
+  // 🔒 image は完全無視
+  if (card.type === "image") return;
+
+  spawnFromCard(card););
 
 
 
@@ -289,7 +279,9 @@ function render() {
 ===================================================== */
 function handleSwipe(dist, index) {
   const parent = deck[index];
-  const type = dist > 0 ? "idea" : "analysis";
+  
+  if (parent.type === "image") return;
+  const type = parent.type; // ← 親と同じタイプだけ生成
 
   const card = {
   id: genId(),
@@ -437,8 +429,9 @@ if (type === "ANALYSIS_RESULT") {
   if (children.length === 0) {
     const parentIndex = deck.findIndex(c => c.id === payload.cardId);
 
-    resetChildCounters();
-    ["idea", "analysis"].forEach(t => {
+   resetChildCounters();
+
+["idea", "analysis"].forEach(t => {
   const card = {
     id: genId(),
     type: t,
@@ -448,7 +441,9 @@ if (type === "ANALYSIS_RESULT") {
       : `解析(${++analysisCount})`,
     sourceText: payload.text
   };
-
+  deck.push(card);
+  createCard(card);
+});
 
       deck.splice(parentIndex + 1, 0, card);
       createCard(card);
