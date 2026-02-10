@@ -84,7 +84,7 @@ const PAGE_URL = {
 };
 
 let overlayEnabled = false;
-let centerIndex = 3;
+let centerIndex = 0;
 let globalCount = 0;
 
 let analysisCount = 0;
@@ -233,7 +233,7 @@ el.addEventListener("dragstart", e => {
   // 🔒 image は完全無視
   if (card.type === "image") return;
 
-  spawnFromCard(card););
+  spawnFromCard(card);
 
 
 
@@ -427,27 +427,27 @@ if (type === "ANALYSIS_RESULT") {
   let children = deck.filter(c => c.parentId === payload.cardId);
 
   if (children.length === 0) {
-    const parentIndex = deck.findIndex(c => c.id === payload.cardId);
+  const parentIndex = deck.findIndex(c => c.id === payload.cardId);
+  resetChildCounters();
 
-   resetChildCounters();
+  ["idea", "analysis"].forEach((t, i) => {
+    const card = {
+      id: genId(),
+      type: t,
+      parentId: payload.cardId,
+      label: t === "idea"
+        ? `発想(${++ideaCount})`
+        : `解析(${++analysisCount})`,
+      sourceText: payload.text
+    };
 
-["idea", "analysis"].forEach(t => {
-  const card = {
-    id: genId(),
-    type: t,
-    parentId: payload.cardId,
-    label: t === "idea"
-      ? `発想(${++ideaCount})`
-      : `解析(${++analysisCount})`,
-    sourceText: payload.text
-  };
-  deck.push(card);
-  createCard(card);
-});
+    deck.splice(parentIndex + 1 + i, 0, card);
+    createCard(card);
+  });
 
-      deck.splice(parentIndex + 1, 0, card);
-      createCard(card);
-    });
+  render();
+}
+
 
     render();
     children = deck.filter(c => c.parentId === payload.cardId);
