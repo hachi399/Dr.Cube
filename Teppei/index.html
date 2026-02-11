@@ -141,7 +141,7 @@ function spawnFromCard(sourceCard) {
   const newCard = {
     id: genId(),
     type: sourceCard.type,
-    parentId: sourceCard.parentId,
+    parentId: sourceCard.id, // ← ここを変更
     label:
       sourceCard.type === "analysis"
         ? `解析(${++analysisCount})`
@@ -154,6 +154,7 @@ function spawnFromCard(sourceCard) {
   render();
 
   const entry = cardMap.get(newCard.id);
+
   sendToIframe(
     entry.iframe,
     sourceCard.type === "analysis"
@@ -165,6 +166,7 @@ function spawnFromCard(sourceCard) {
     }
   );
 }
+
 
 /* =====================================================
    カード生成
@@ -247,10 +249,6 @@ function createCard(card) {
 }
 
 function render() {
-  const imageIndex = getImageIndex();
-  if (imageIndex !== -1) {
-    centerIndex = imageIndex;
-  }
 
   cardMap.forEach(v => v.el.classList.remove("visible"));
 
@@ -266,6 +264,7 @@ function render() {
     }
   });
 }
+
 
 
 
