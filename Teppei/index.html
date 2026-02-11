@@ -409,7 +409,7 @@ if (type === "ANALYSIS_RESULT") {
 
 
   /* ===== image → text 完了 ===== */
-　if (type === "IMAGE_TEXT_READY") {
+if (type === "IMAGE_TEXT_READY") {
 
   resetChildCounters();
 
@@ -420,7 +420,6 @@ if (type === "ANALYSIS_RESULT") {
     centerIndex = imageIndex;
   }
 
-  // ★ ここで先に宣言
   let children = deck.filter(c => c.parentId === payload.cardId);
 
   if (children.length === 0) {
@@ -444,11 +443,11 @@ if (type === "ANALYSIS_RESULT") {
 
     render();
 
-    // ★ 生成後に再取得
+    // 再取得
     children = deck.filter(c => c.parentId === payload.cardId);
   }
 
-  // ★ ここで使う
+  // ★ ここをブロック内に置くのが重要
   children.forEach(c => {
 
     if (executedMap.get(c.id)) return;
@@ -466,26 +465,9 @@ if (type === "ANALYSIS_RESULT") {
     });
 
   });
+
 }
 
-
-
-  // ③ idea / analysis に送信
-  children.forEach(c => {
-    if (executedMap.get(c.id)) return;
-    executedMap.set(c.id, true);
-
-    const entry = cardMap.get(c.id);
-    if (!entry) return;
-
-    const msgType =
-      c.type === "idea" ? "START_IDEA" : "START_ANALYSIS";
-
-    sendToIframe(entry.iframe, msgType, {
-      cardId: c.id,
-      text: payload.text
-    });
-  });
 });
 
 /* =====================================================
