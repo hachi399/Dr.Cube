@@ -183,71 +183,67 @@ function spawnFromCard(sourceCard) {
     }
   }, location.origin);
 }
+function createCard(card) {
+  const el = document.createElement("div");
+  el.className = "card";
+  el.dataset.cardId = card.id;
+  el.setAttribute("draggable", true);
 
-  function createCard(card) {
-    const el = document.createElement("div");
-    el.setAttribute("draggable", true);
+  el.addEventListener("dragstart", e => {
+    e.preventDefault();
+  });
 
-el.addEventListener("dragstart", e => {
-  e.preventDefault(); // 移動しない
-});
-    
-    el.className = "card";
-    el.dataset.cardId = card.id;
+  const label = document.createElement("div");
+  label.className = "card-type";
+  label.textContent = card.label;
 
-    const label = document.createElement("div");
-    label.className = "card-type";
-    label.textContent = card.label;
+  const wrap = document.createElement("div");
+  wrap.className = "iframe-wrap";
 
-    const wrap = document.createElement("div");
-    wrap.className = "iframe-wrap";
+  const iframe = document.createElement("iframe");
+  iframe.src = PAGE_URL[card.type];
+  iframe.dataset.cardId = card.id;
+  iframe.dataset.cardType = card.type;
 
-    const iframe = document.createElement("iframe");
-    iframe.src = PAGE_URL[card.type];
-    iframe.dataset.cardId = card.id;
-    iframe.dataset.cardType = card.type;
+  iframe.onload = () => {
+    iframe.contentWindow.postMessage({
+      type: "INIT",
+      payload: { cardId: card.id }
+    }, location.origin);
+  };
 
-   iframe.onload = () => {
-  iframe.contentWindow.postMessage({
-    type: "INIT",
-    payload: {cardId: card.id,}
-  }, location.origin);
+  const overlay = document.createElement("div");
+  overlay.className = "swipe-layer";
 
-};
+  let startX = 0;
 
+  el.addEventListener("pointerdown", e => {
+    startX = e.clientX;
+    el.setPointerCapture(e.pointerId);
+  });
 
-    const overlay = document.createElement("div");
-    overlay.className = "swipe-layer";
+  el.addEventListener("pointerup", e => {
+    const dist = e.clientX - startX;
+    if (Math.abs(dist) < 40) return;
 
-    let startX = 0;
+    if (card.type === "image") return;
 
-    el.addEventListener("pointerdown", e => {
-      startX = e.clientX;
-      el.setPointerCapture(e.pointerId);
-    });
+    spawnFromCard(card);
+  });
 
-    el.addEventListener("pointerup", e => {
-  const dist = e.clientX - startX;
-  if (Math.abs(dist) < 40) return;
+  wrap.appendChild(iframe);
+  el.append(label, wrap, overlay);
+  cardArea.appendChild(el);
 
-  // 🔒 image は完全無視
-  if (card.type === "image") return;
-
-  spawnFromCard(card);
-
-
-
-    wrap.appendChild(iframe);
-    el.append(label, wrap, overlay);
-    cardArea.appendChild(el);
-
-    cardMap.set(card.id, { el, iframe, overlay });
-  }
+  cardMap.set(card.id, { el, iframe, overlay });
+}
 
 /* =====================================================
    render
 ===================================================== */
-function getImageIndex() {
+if (deck.length === 0) return;
+
+  function getImageIndex() {
   return deck.findIndex(c => c.type === "image");
 }
 
