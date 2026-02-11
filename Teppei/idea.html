@@ -86,7 +86,6 @@ const simulation = d3.forceSimulation()
 /* =====================================================
    親との通信
 ===================================================== */
-let executed = false;
 
 window.addEventListener("message", e => {
   if (e.origin !== location.origin) return;
@@ -103,8 +102,6 @@ window.addEventListener("message", e => {
     console.log("⏳ INIT待ち");
     return;
   }
-  if (executed) return;
-  executed = true;
 
   const seed =
     payload.text?.split(/\s|、|。|\n/).filter(Boolean)[0]
@@ -113,6 +110,7 @@ window.addEventListener("message", e => {
   document.getElementById("seedInput").value = seed;
   generate();
 }
+
 
 });
 
