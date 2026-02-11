@@ -409,44 +409,59 @@ if (type === "ANALYSIS_RESULT") {
 
 
   /* ===== image → text 完了 ===== */
-  if (type === "IMAGE_TEXT_READY") {
-   resetChildCounters();
-  // ① image の結果を保存
+if (type === "IMAGE_TEXT_READY") {
+  resetChildCounters();
+
   imageResultMap.set(payload.cardId, payload.text);
 
   const imageIndex = deck.findIndex(c => c.id === payload.cardId);
   if (imageIndex !== -1) {
     centerIndex = imageIndex;
   }
-  // ② 子カードが無ければ自動生成
+
   let children = deck.filter(c => c.parentId === payload.cardId);
 
   if (children.length === 0) {
-  const parentIndex = deck.findIndex(c => c.id === payload.cardId);
-  resetChildCounters();
+    const parentIndex = deck.findIndex(c => c.id === payload.cardId);
 
-  ["idea", "analysis"].forEach((t, i) => {
-    const card = {
-      id: genId(),
-      type: t,
-      parentId: payload.cardId,
-      label: t === "idea"
-        ? `発想(${++ideaCount})`
-        : `解析(${++analysisCount})`,
-      sourceText: payload.text
-    };
+    ["idea", "analysis"].forEach((t, i) => {
+      const card = {
+        id: genId(),
+        type: t,
+        parentId: payload.cardId,
+        label: t === "idea"
+          ? `発想(${++ideaCount})`
+          : `解析(${++analysisCount})`,
+        sourceText: payload.text
+      };
 
-    deck.splice(parentIndex + 1 + i, 0, card);
-    createCard(card);
-  });
+      deck.splice(parentIndex + 1 + i, 0, card);
+      createCard(card);
+    });
+  }
 
   render();
+
+  // ★ ここで再取得
+  children = deck.filter(c => c.parentId === payload.cardId);
+
+  children.forEach(c => {
+    if (executedMap.get(c.id)) return;
+    executedMap.set(c.id, true);
+
+    const entry = cardMap.get(c.id);
+    if (!entry) return;
+
+    const msgType =
+      c.type === "idea" ? "START_IDEA" : "START_ANALYSIS";
+
+    sendToIframe(entry.iframe, msgType, {
+      cardId: c.id,
+      text: payload.text
+    });
+  });
 }
 
-
-    render();
-    children = deck.filter(c => c.parentId === payload.cardId);
-  }
 
   // ③ idea / analysis に送信
   children.forEach(c => {
