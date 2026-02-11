@@ -102,7 +102,9 @@ let uid = 0;
 const genId = () => "card-" + uid++;
 
 const deck = [
-  { id: genId(), type: 'image', label: '画像' }
+  { id: genId(), type: 'image', label: '画像' },
+  { id: genId(), type: 'idea', label: '発想(0)' },
+  { id: genId(), type: 'analysis', label: '解析(0)' }
 ];
 
 
@@ -136,25 +138,29 @@ function startImage(card) {
 }
 
 function spawnFromCard(sourceCard) {
-  const parentIndex = deck.findIndex(c => c.id === sourceCard.id);
 
-  const newCard = {
-    id: genId(),
-    type: sourceCard.type,
-    parentId: sourceCard.id, // ← ここを変更
-    label:
-      sourceCard.type === "analysis"
-        ? `解析(${++analysisCount})`
-        : `発想(${++ideaCount})`,
-    sourceText: sourceCard.sourceText
-  };
+  const index = deck.findIndex(c => c.id === sourceCard.id);
 
-  deck.splice(parentIndex + 1, 0, newCard);
-  createCard(newCard);
-  centerIndex = parentIndex + 1;
-  render();
+  if (index === -1) return;
 
-  const entry = cardMap.get(newCard.id);
+  if (sourceCard.type === "idea") {
+    ideaCount++;
+
+    deck[index].label = `発想(${ideaCount})`;
+  }
+
+  if (sourceCard.type === "analysis") {
+    analysisCount++;
+
+    deck[index].label = `解析(${analysisCount})`;
+  }
+
+  deck[index].sourceText = sourceCard.sourceText;
+
+  const entry = cardMap.get(deck[index].id);
+
+  // ラベル更新
+  entry.el.querySelector(".card-type").textContent = deck[index].label;
 
   sendToIframe(
     entry.iframe,
@@ -162,8 +168,8 @@ function spawnFromCard(sourceCard) {
       ? "START_ANALYSIS"
       : "START_IDEA",
     {
-      cardId: newCard.id,
-      text: sourceCard.sourceText
+      cardId: deck[index].id,
+      text: deck[index].sourceText
     }
   );
 }
@@ -406,69 +412,44 @@ if (type === "ANALYSIS_RESULT") {
     render();
   }
 }
-
-
-  /* ===== image → text 完了 ===== */
 if (type === "IMAGE_TEXT_READY") {
 
   resetChildCounters();
 
   imageResultMap.set(payload.cardId, payload.text);
 
-  const imageIndex = deck.findIndex(c => c.id === payload.cardId);
-  if (imageIndex !== -1) {
-    centerIndex = imageIndex;
-  }
+  const ideaCard = deck.find(c => c.type === "idea");
+  const analysisCard = deck.find(c => c.type === "analysis");
 
-  let children = deck.filter(c => c.parentId === payload.cardId);
+  ideaCount = 1;
+  analysisCount = 1;
 
-  if (children.length === 0) {
+  ideaCard.label = `発想(${ideaCount})`;
+  analysisCard.label = `解析(${analysisCount})`;
 
-  const parentIndex = deck.findIndex(c => c.id === payload.cardId);
+  ideaCard.sourceText = payload.text;
+  analysisCard.sourceText = payload.text;
 
-  ["idea", "analysis"].forEach((t, i) => {
-    const card = {
-      id: genId(),
-      type: t,
-      parentId: payload.cardId,
-      label: t === "idea"
-        ? `発想(${++ideaCount})`
-        : `解析(${++analysisCount})`,
-      sourceText: payload.text
-    };
+  // ラベル更新
+  cardMap.get(ideaCard.id)
+    .el.querySelector(".card-type")
+    .textContent = ideaCard.label;
 
-    deck.splice(parentIndex + 1 + i, 0, card);
-    createCard(card);
-  });
+  cardMap.get(analysisCard.id)
+    .el.querySelector(".card-type")
+    .textContent = analysisCard.label;
 
-  // 🔥 ここ追加
-  centerIndex = parentIndex + 1;
+  sendToIframe(
+    cardMap.get(ideaCard.id).iframe,
+    "START_IDEA",
+    { cardId: ideaCard.id, text: payload.text }
+  );
 
-  render();
-
-  children = deck.filter(c => c.parentId === payload.cardId);
-}
-
-
-  // ★ ここをブロック内に置くのが重要
-  children.forEach(c => {
-
-    if (executedMap.get(c.id)) return;
-    executedMap.set(c.id, true);
-
-    const entry = cardMap.get(c.id);
-    if (!entry) return;
-
-    const msgType =
-      c.type === "idea" ? "START_IDEA" : "START_ANALYSIS";
-
-    sendToIframe(entry.iframe, msgType, {
-      cardId: c.id,
-      text: payload.text
-    });
-
-  });
-
+  sendToIframe(
+    cardMap.get(analysisCard.id).iframe,
+    "START_ANALYSIS",
+    { cardId: analysisCard.id, text: payload.text }
+  );
 }
 
 });
