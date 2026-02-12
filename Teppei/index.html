@@ -303,7 +303,7 @@ function handleSwipe(dist, index) {
 /* ================= IndexedDB ================= */
 const DB_NAME = 'cardDB';
 const STORE = 'analysis';
-let db = null;
+let db;
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -327,6 +327,28 @@ function openDB() {
     req.onerror = e => reject(e);
   });
 }
+const request = indexedDB.open("CardDB", 1);
+
+request.onupgradeneeded = e => {
+  db = e.target.result;
+
+  if (!db.objectStoreNames.contains("cards")) {
+    db.createObjectStore("cards", { keyPath: "id" });
+  }
+};
+
+request.onsuccess = e => {
+  db = e.target.result;
+  console.log("DB ready");
+};
+function saveCardToDB(data) {
+  if (!db) return;
+
+  const tx = db.transaction("cards", "readwrite");
+  const store = tx.objectStore("cards");
+  store.add(data);
+}
+
 
 /* ===== 保存処理（sourceWindow に結果を返す） ===== */
 function saveResult(data, sourceWindow) {
