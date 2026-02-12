@@ -302,7 +302,7 @@ function handleSwipe(dist, index) {
 
 /* ================= IndexedDB ================= */
 const DB_NAME = 'cardDB';
-const STORE = 'analysis';
+const STORE = 'cards';
 let db;
 
 function openDB() {
@@ -327,57 +327,24 @@ function openDB() {
     req.onerror = e => reject(e);
   });
 }
-const request = indexedDB.open("CardDB", 1);
-
-request.onupgradeneeded = e => {
-  db = e.target.result;
-
-  if (!db.objectStoreNames.contains("cards")) {
-    db.createObjectStore("cards", { keyPath: "id" });
-  }
-};
-
-request.onsuccess = e => {
-  db = e.target.result;
-  console.log("DB ready");
-};
-function saveCardToDB(data) {
-  if (!db) return;
-
-  const tx = db.transaction("cards", "readwrite");
-  const store = tx.objectStore("cards");
-  store.add(data);
-}
-
 
 /* ===== 保存処理（sourceWindow に結果を返す） ===== */
-function saveResult(data, sourceWindow) {
+function saveResult(data) {
   if (!db) return;
 
   const tx = db.transaction(STORE, 'readwrite');
   const store = tx.objectStore(STORE);
 
   store.add({
-    time: Date.now(),
-    data
+    createdAt: Date.now(),
+    ...data
   });
 
-  tx.oncomplete = () => {
-    sourceWindow?.postMessage(
-      { type: 'SAVE_SUCCESS', payload: data },
-      location.origin
-    );
-
-    broadcastUpdate(data, sourceWindow); // ★ sourceWindow を渡す
-  };
-
   tx.onerror = () => {
-    sourceWindow?.postMessage(
-      { type: 'SAVE_ERROR', error: 'IndexedDB error' },
-      location.origin
-    );
+    console.error("DB save error");
   };
 }
+
 
 /* ===== idea / analysis iframe へ一斉通知 ===== */
 function broadcastUpdate(payload, sourceWindow) {
@@ -399,44 +366,37 @@ function broadcastUpdate(payload, sourceWindow) {
 
 /* ================= iframe からの結果受信 ================= */
 const imageResultMap = new Map(); // cardId -> text
-  
+
 window.addEventListener("message", event => {
   if (event.origin !== location.origin) return;
 
   const { type, payload } = event.data || {};
   if (!type) return;
 
-  /* ===== analysis 結果受信 ===== */
-if (type === "ANALYSIS_RESULT") {
-  const { cardId, result } = payload;
+  if (type === "ANALYSIS_RESULT") {
+    const { cardId, result } = payload;
 
-  log(`📥 解析結果受信: ${cardId}`);
-
-  // 保存
-  saveResult(
-    { cardId, result, type: "analysis" },
-    event.source
-  );
-
-  // 🔥 次ノード自動生成（例：idea）
-  const parentIndex = deck.findIndex(c => c.id === cardId);
-  if (parentIndex !== -1) {
-    const card = {
-      id: genId(),
-      type: "idea",
-      parentId: cardId,
-      label: `発想(${++globalCount})`,
-      sourceText: result
-    };
-
-    deck.splice(parentIndex + 1, 0, card);
-    createCard(card);
-    render();
+    saveResult({
+      cardId,
+      type: "analysis",
+      text: result,
+      sourceText: deck.find(c => c.id === cardId)?.sourceText || ""
+    });
   }
-}
-if (type === "IMAGE_TEXT_READY") {
 
-  resetChildCounters();
+  if (type === "IDEA_RESULT") {
+    const { cardId, result } = payload;
+
+    saveResult({
+      cardId,
+      type: "idea",
+      text: result,
+      sourceText: deck.find(c => c.id === cardId)?.sourceText || ""
+    });
+  }
+
+  if (type === "IMAGE_TEXT_READY") {
+    resetChildCounters();
 
   imageResultMap.set(payload.cardId, payload.text);
 
@@ -472,9 +432,10 @@ if (type === "IMAGE_TEXT_READY") {
     "START_ANALYSIS",
     { cardId: analysisCard.id, text: payload.text }
   );
-}
 
+  }
 });
+
 
 /* =====================================================
    iframe → 親 通信
