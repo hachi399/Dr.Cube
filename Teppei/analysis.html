@@ -113,12 +113,9 @@ window.addEventListener("message", e => {
 
   /* ===== 解析開始 ===== */
   if (type === "START_ANALYSIS") {
-   
-    if (executed) return;
-    executed = true;
+  analyze(payload.text || "内容をより華やかに論理てきに解析して");
+}
 
-    analyze(payload.text || "より深くより発展的、論理的にアプローチして");
-  }
 });
 
 
