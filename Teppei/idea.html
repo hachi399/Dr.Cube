@@ -269,6 +269,12 @@ async function generate() {
   }
 }, location.origin);
 
+if (!cardId) {
+  console.warn("cardId未設定");
+  return;
+}
+
+
 }
 
 /* =====================================================
