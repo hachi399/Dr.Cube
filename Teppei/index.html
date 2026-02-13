@@ -353,6 +353,10 @@ function openDB() {
 
 /* ===== 保存処理（sourceWindow に結果を返す） ===== */
 function saveResult(data) {
+  function saveResult(data) {
+  console.log("保存しようとしている:", data); // ←追加
+  if (!db) return;
+
   if (!db) return;
 
   const tx = db.transaction(STORE, 'readwrite');
