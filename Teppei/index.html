@@ -387,8 +387,10 @@ function loadHistory(filterType = null) {
     results.sort((a, b) => b.createdAt - a.createdAt);
 
     if (filterType) {
-      results = results.filter(r => r.type === filterType);
-    }
+  results = results.filter(r => 
+    (r.type || "").toLowerCase() === filterType.toLowerCase()
+  );
+}
 
     renderHistory(results);
   };
