@@ -95,6 +95,7 @@ window.addEventListener("message", e => {
 
   if (type === "INIT") {
     initialized = true;
+    cardId = payload.cardId;
     setup();
   }
 
