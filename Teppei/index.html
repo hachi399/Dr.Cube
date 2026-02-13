@@ -363,10 +363,16 @@ function saveResult(data) {
     ...data
   });
 
+  tx.oncomplete = () => {
+    console.log("DB save success");
+    loadHistory(); // ← これを追加🔥
+  };
+
   tx.onerror = () => {
     console.error("DB save error");
   };
 }
+
 function loadHistory(filterType = null) {
   if (!db) return;
 
