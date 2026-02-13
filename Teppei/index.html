@@ -468,7 +468,7 @@ function broadcastUpdate(payload, sourceWindow) {
 const imageResultMap = new Map(); // cardId -> text
 
 window.addEventListener("message", event => {
-  if (event.origin !== location.origin) return;
+  //if (event.origin !== location.origin) return;
 
   const { type, payload } = event.data || {};
   if (!type) return;
