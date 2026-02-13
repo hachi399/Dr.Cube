@@ -89,7 +89,7 @@ const simulation = d3.forceSimulation()
 let cardId = null;
 
 window.addEventListener("message", e => {
-  if (e.origin !== location.origin) return;
+  //if (e.origin !== location.origin) return;
 
   const { type, payload } = e.data || {};
 
