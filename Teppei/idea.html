@@ -98,6 +98,7 @@ window.addEventListener("message", e => {
   }
 
   if (type === "START_IDEA") {
+    
   if (!initialized) {
     console.log("⏳ INIT待ち");
     return;
@@ -110,6 +111,11 @@ window.addEventListener("message", e => {
   document.getElementById("seedInput").value = seed;
   generate();
 }
+ if (type === "RESTORE_STRUCTURE") {
+    nodes = payload.structure.nodes;
+    links = payload.structure.links;
+    restart();
+  }
 
 
 });
@@ -246,6 +252,19 @@ async function generate() {
   }
 
   restart();
+
+  window.parent.postMessage({
+  type: "IDEA_RESULT",
+  payload: {
+    cardId,
+    result: seed,
+    structure: {
+      nodes,
+      links
+    }
+  }
+}, location.origin);
+
 }
 
 /* =====================================================
