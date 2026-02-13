@@ -483,6 +483,7 @@ window.addEventListener("message", event => {
 
 
   if (type === "IDEA_RESULT") {
+    console.log("IDEA_RESULT受信:", payload);
     const { cardId, result, structure } = payload;
 
    saveResult({
