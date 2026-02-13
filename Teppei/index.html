@@ -401,8 +401,8 @@ function renderHistory(list) {
     container.innerHTML = "<p>データなし</p>";
     return;
   }
-
-  list.forEach(item => {
+  
+   list.forEach(item => {
     const div = document.createElement("div");
     div.style.border = "1px solid #333";
     div.style.padding = "8px";
@@ -422,28 +422,24 @@ function renderHistory(list) {
       </div>
     `;
 
-    container.appendChild(div);
-  });
+    div.onclick = () => {
+    const ideaCard = deck.find(c => c.type === "idea");
+    const analysisCard = deck.find(c => c.type === "analysis");
 
-  div.onclick = () => {
+    const targetCard =
+      item.type === "idea" ? ideaCard : analysisCard;
 
-  const ideaCard = deck.find(c => c.type === "idea");
-  const analysisCard = deck.find(c => c.type === "analysis");
-
-  const targetCard =
-    item.type === "idea" ? ideaCard : analysisCard;
-
-  sendToIframe(
-    cardMap.get(targetCard.id).iframe,
-    "RESTORE_STRUCTURE",
-    {
-      cardId: targetCard.id,
-      structure: item.structure
-    }
-  );
-};
-
-}
+    sendToIframe(
+      cardMap.get(targetCard.id).iframe,
+      "RESTORE_STRUCTURE",
+      {
+        cardId: targetCard.id,
+        structure: item.structure
+      }
+    );
+  };
+  container.appendChild(div);
+});
 
 
 
@@ -481,7 +477,7 @@ window.addEventListener("message", event => {
     cardId,
     type: "analysis",
     text: result,
-    sourceText: ...,
+    sourceText: deck.find(c => c.id === cardId)?.sourceText || "",
     structure
   });
 }
@@ -494,11 +490,8 @@ window.addEventListener("message", event => {
   cardId,
   type: "idea",
   text: result,
-  sourceText: ...,
-  structure: {
-    nodes,
-    links
-  }
+  sourceText: deck.find(c => c.id === cardId)?.sourceText || "",
+  structure
 });
 
   }
