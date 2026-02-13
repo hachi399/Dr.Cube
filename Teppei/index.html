@@ -424,6 +424,25 @@ function renderHistory(list) {
 
     container.appendChild(div);
   });
+
+  div.onclick = () => {
+
+  const ideaCard = deck.find(c => c.type === "idea");
+  const analysisCard = deck.find(c => c.type === "analysis");
+
+  const targetCard =
+    item.type === "idea" ? ideaCard : analysisCard;
+
+  sendToIframe(
+    cardMap.get(targetCard.id).iframe,
+    "RESTORE_STRUCTURE",
+    {
+      cardId: targetCard.id,
+      structure: item.structure
+    }
+  );
+};
+
 }
 
 
@@ -456,25 +475,32 @@ window.addEventListener("message", event => {
   if (!type) return;
 
   if (type === "ANALYSIS_RESULT") {
-    const { cardId, result } = payload;
+  const { cardId, result, structure } = payload;
 
-    saveResult({
-      cardId,
-      type: "analysis",
-      text: result,
-      sourceText: deck.find(c => c.id === cardId)?.sourceText || ""
-    });
-  }
+  saveResult({
+    cardId,
+    type: "analysis",
+    text: result,
+    sourceText: ...,
+    structure
+  });
+}
+
 
   if (type === "IDEA_RESULT") {
-    const { cardId, result } = payload;
+    const { cardId, result, structure } = payload;
 
-    saveResult({
-      cardId,
-      type: "idea",
-      text: result,
-      sourceText: deck.find(c => c.id === cardId)?.sourceText || ""
-    });
+   saveResult({
+  cardId,
+  type: "idea",
+  text: result,
+  sourceText: ...,
+  structure: {
+    nodes,
+    links
+  }
+});
+
   }
 
   if (type === "IMAGE_TEXT_READY") {
