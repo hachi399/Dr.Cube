@@ -100,7 +100,7 @@ window.addEventListener("message", e => {
   }
 
   if (type === "START_IDEA") {
-    
+
   if (!initialized) {
     console.log("⏳ INIT待ち");
     return;
@@ -108,13 +108,12 @@ window.addEventListener("message", e => {
 
   cardId = payload.cardId;
 
-  const seed =
-    payload.text?.split(/\s|、|。|\n/).filter(Boolean)[0]
-    || "発想";
+  const seed = payload.text?.trim() || "発想";
 
   document.getElementById("seedInput").value = seed;
   generate();
 }
+
  if (type === "RESTORE_STRUCTURE") {
     nodes = payload.structure.nodes;
     links = payload.structure.links;
@@ -210,10 +209,11 @@ function restart() {
     .attr("fill", d => d.id === "n1" ? "#ffb347" : "#ffdca8");
 
   enter.append("text")
-    .attr("y", 4)
-    .attr("text-anchor", "middle")
-    .attr("font-size", "11px")
-    .text(d => d.name);
+  .attr("y", 4)
+  .attr("text-anchor", "middle")
+  .attr("font-size", "11px")
+  .text(d => d.name.length > 20 ? d.name.slice(0,20) + "…" : d.name);
+
 
   simulation.nodes(nodes);
   simulation.force("link").links(links);
