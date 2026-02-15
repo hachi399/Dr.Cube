@@ -138,7 +138,9 @@ async function fetchWords(word, count = 6) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        message: `「${word}」から連想される短い単語を${count}つ、日本語で出してください。出力は単語のみ、改行かカンマで区切ってください。より突飛な連想でよろしく`
+        message: `「${word}」から連想される短い単語を${count}つ、日本語で出してください。それぞれについて、
+単語 | 連想理由
+の形式で出力してください。より突飛な連想でよろしく`
       })
     });
 
@@ -180,9 +182,11 @@ function addNode(name, parent = null) {
 
   if (parent) {
     links.push({
-      source: parent.id,
-      target: node.id
-    });
+  source: parent.id,
+  target: node.id,
+  reason: reason
+});
+
   }
 
   return node;
@@ -224,6 +228,19 @@ function restart() {
   simulation.nodes(nodes);
   simulation.force("link").links(links);
   simulation.alpha(1).restart();
+
+  const linkLabel = linkG.selectAll("text")
+  .data(links);
+
+linkLabel.exit().remove();
+
+linkLabel.enter()
+  .append("text")
+  .attr("font-size", "9px")
+  .attr("fill", "#666")
+  .merge(linkLabel)
+  .text(d => d.reason || "");
+
 }
 
 function ticked() {
@@ -235,6 +252,11 @@ function ticked() {
     .attr("y1", d => d.source.y)
     .attr("x2", d => d.target.x)
     .attr("y2", d => d.target.y);
+
+  linkG.selectAll("text")
+  .attr("x", d => (d.source.x + d.target.x) / 2)
+  .attr("y", d => (d.source.y + d.target.y) / 2);
+
 }
 
 /* =====================================================
